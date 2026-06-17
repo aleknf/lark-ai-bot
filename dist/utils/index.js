@@ -60,9 +60,9 @@ function verifyLarkSignature(timestamp, nonce, body, signature) {
         timestamp,
         nonce,
         bodyLength: body.length,
-        bodyPreview: body.slice(0, 120),
-        computed: results,
-    }, "Webhook signature mismatch — neither verification_token nor app_secret matched");
+        fullBody: body,
+        tokenLengths: Object.fromEntries(keys.map(([n, k]) => [n, k.length])),
+    }, "Webhook signature mismatch — full body logged");
     return false;
 }
 // --- Text Extraction from Lark Message Content ---

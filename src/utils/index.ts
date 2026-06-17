@@ -65,10 +65,10 @@ export function verifyLarkSignature(
       timestamp,
       nonce,
       bodyLength: body.length,
-      bodyPreview: body.slice(0, 120),
-      computed: results,
+      fullBody: body,
+      tokenLengths: Object.fromEntries(keys.map(([n, k]) => [n, k.length])),
     },
-    "Webhook signature mismatch — neither verification_token nor app_secret matched"
+    "Webhook signature mismatch — full body logged"
   );
   return false;
 }
