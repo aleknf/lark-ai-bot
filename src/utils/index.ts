@@ -44,10 +44,29 @@ export function verifyLarkSignature(
 
   const raw = `${timestamp}${nonce}${body}`;
 
+  // Approach 1: HMAC-SHA256(key, raw)
   for (const [keyName, key] of keys) {
     const expected = crypto.createHmac("sha256", key).update(raw).digest("hex");
     if (expected === signature) {
-      logger.info({ keyName }, "Signature matched!");
+      logger.info({ method: "hmac", keyName }, "Signature matched!");
+      return true;
+    }
+  }
+
+  // Approach 2: plain SHA256(raw + key)
+  for (const [keyName, key] of keys) {
+    const expected = crypto.createHash("sha256").update(raw + key).digest("hex");
+    if (expected === signature) {
+      logger.info({ method: "sha256(raw+key)", keyName }, "Signature matched!");
+      return true;
+    }
+  }
+
+  // Approach 3: plain SHA256(key + raw)
+  for (const [keyName, key] of keys) {
+    const expected = crypto.createHash("sha256").update(key + raw).digest("hex");
+    if (expected === signature) {
+      logger.info({ method: "sha256(key+raw)", keyName }, "Signature matched!");
       return true;
     }
   }
@@ -55,7 +74,9 @@ export function verifyLarkSignature(
   // All failed — log details
   const results: Record<string, string> = {};
   for (const [keyName, key] of keys) {
-    results[`hmac_with_${keyName}`] = crypto.createHmac("sha256", key).update(raw).digest("hex");
+    results[`hmac_${keyName}`] = crypto.createHmac("sha256", key).update(raw).digest("hex");
+    results[`sha256_raw+${keyName}`] = crypto.createHash("sha256").update(raw + key).digest("hex");
+    results[`sha256_${keyName}+raw`] = crypto.createHash("sha256").update(key + raw).digest("hex");
   }
 
   logger.warn(
@@ -65,10 +86,9 @@ export function verifyLarkSignature(
       timestamp,
       nonce,
       bodyLength: body.length,
-      fullBody: body,
-      tokenLengths: Object.fromEntries(keys.map(([n, k]) => [n, k.length])),
+      computed: results,
     },
-    "Webhook signature mismatch — full body logged"
+    "Webhook signature mismatch — all algorithms failed"
   );
   return false;
 }

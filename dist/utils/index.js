@@ -42,17 +42,36 @@ function verifyLarkSignature(timestamp, nonce, body, signature) {
         return true;
     }
     const raw = `${timestamp}${nonce}${body}`;
+    // Approach 1: HMAC-SHA256(key, raw)
     for (const [keyName, key] of keys) {
         const expected = node_crypto_1.default.createHmac("sha256", key).update(raw).digest("hex");
         if (expected === signature) {
-            exports.logger.info({ keyName }, "Signature matched!");
+            exports.logger.info({ method: "hmac", keyName }, "Signature matched!");
+            return true;
+        }
+    }
+    // Approach 2: plain SHA256(raw + key)
+    for (const [keyName, key] of keys) {
+        const expected = node_crypto_1.default.createHash("sha256").update(raw + key).digest("hex");
+        if (expected === signature) {
+            exports.logger.info({ method: "sha256(raw+key)", keyName }, "Signature matched!");
+            return true;
+        }
+    }
+    // Approach 3: plain SHA256(key + raw)
+    for (const [keyName, key] of keys) {
+        const expected = node_crypto_1.default.createHash("sha256").update(key + raw).digest("hex");
+        if (expected === signature) {
+            exports.logger.info({ method: "sha256(key+raw)", keyName }, "Signature matched!");
             return true;
         }
     }
     // All failed — log details
     const results = {};
     for (const [keyName, key] of keys) {
-        results[`hmac_with_${keyName}`] = node_crypto_1.default.createHmac("sha256", key).update(raw).digest("hex");
+        results[`hmac_${keyName}`] = node_crypto_1.default.createHmac("sha256", key).update(raw).digest("hex");
+        results[`sha256_raw+${keyName}`] = node_crypto_1.default.createHash("sha256").update(raw + key).digest("hex");
+        results[`sha256_${keyName}+raw`] = node_crypto_1.default.createHash("sha256").update(key + raw).digest("hex");
     }
     exports.logger.warn({
         received: signature,
@@ -60,9 +79,8 @@ function verifyLarkSignature(timestamp, nonce, body, signature) {
         timestamp,
         nonce,
         bodyLength: body.length,
-        fullBody: body,
-        tokenLengths: Object.fromEntries(keys.map(([n, k]) => [n, k.length])),
-    }, "Webhook signature mismatch — full body logged");
+        computed: results,
+    }, "Webhook signature mismatch — all algorithms failed");
     return false;
 }
 // --- Text Extraction from Lark Message Content ---
