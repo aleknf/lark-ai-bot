@@ -97,7 +97,7 @@ async function fetchChatHistory(chatId, limit = 20) {
     const args = [
         "im", "+chat-messages-list",
         "--chat-id", chatId,
-        "--limit", String(limit),
+        "--page-size", String(limit),
         "--as", "bot",
     ];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

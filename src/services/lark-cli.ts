@@ -130,7 +130,7 @@ export async function fetchChatHistory(
   const args = [
     "im", "+chat-messages-list",
     "--chat-id", chatId,
-    "--limit", String(limit),
+    "--page-size", String(limit),
     "--as", "bot",
   ];
 
