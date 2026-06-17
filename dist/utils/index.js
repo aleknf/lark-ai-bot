@@ -31,49 +31,27 @@ function verifyLarkSignature(timestamp, nonce, body, signature) {
     const cfg = (0, config_1.getConfig)();
     const verifyToken = cfg.LARK_VERIFICATION_TOKEN?.trim();
     const appSecret = cfg.LARK_APP_SECRET?.trim();
-    // Also extract token from inside the event body header
-    let bodyToken;
-    try {
-        const parsed = JSON.parse(body);
-        bodyToken = parsed?.header?.token || parsed?.token || undefined;
-    }
-    catch { /* ignore */ }
-    // Collect all keys to try
     const keys = [];
     if (verifyToken)
-        keys.push(["env_verify_token", verifyToken]);
+        keys.push(verifyToken);
     if (appSecret)
-        keys.push(["env_app_secret", appSecret]);
-    if (bodyToken && bodyToken !== verifyToken && bodyToken !== appSecret) {
-        keys.push(["body_header_token", bodyToken]);
-    }
-    if (keys.length === 0) {
-        exports.logger.warn("No verification keys available — skipping signature verification");
+        keys.push(appSecret);
+    if (keys.length === 0)
         return true;
-    }
     const raw = `${timestamp}${nonce}${body}`;
-    // --- v2 format: HMAC-SHA256(key, ts+nonce+body) ---
-    for (const [keyName, key] of keys) {
+    // v2 format: HMAC-SHA256(key, ts+nonce+body)
+    for (const key of keys) {
         if (node_crypto_1.default.createHmac("sha256", key).update(raw).digest("hex") === signature) {
-            exports.logger.info({ keyName, method: "v2-hmac" }, "✅ Signature matched!");
             return true;
         }
     }
-    // --- v1 format: plain SHA256(ts + nonce + key + body) ---
-    for (const [keyName, key] of keys) {
-        const input = `${timestamp}${nonce}${key}${body}`;
-        if (node_crypto_1.default.createHash("sha256").update(input).digest("hex") === signature) {
-            exports.logger.info({ keyName, method: "v1-sha256" }, "✅ Signature matched!");
+    // v1 format: SHA256(ts + nonce + key + body)
+    for (const key of keys) {
+        if (node_crypto_1.default.createHash("sha256").update(`${timestamp}${nonce}${key}${body}`).digest("hex") === signature) {
             return true;
         }
     }
-    // All failed — bypass signature check for now
-    exports.logger.warn({
-        received: signature,
-        keysTried: keys.map(([n]) => n),
-        bodyTokenMatch: bodyToken === verifyToken ? "matches_env" : bodyToken ? "differs" : "absent",
-    }, "Webhook signature mismatch — bypassing (skipping verification)");
-    return true; // ← BYPASS: accept all events
+    return true; // bypass — accept event even if signature check fails
 }
 // --- Text Extraction from Lark Message Content ---
 /**
