@@ -1,0 +1,245 @@
+"use strict";
+// ============================================
+// AI Pipeline — orchestrates context gathering, LLM call, and actions
+// ============================================
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.executePipeline = executePipeline;
+const config_1 = require("../config");
+const utils_1 = require("../utils");
+const openrouter_1 = require("../services/openrouter");
+const im_1 = require("../services/im");
+const base_1 = require("../services/base");
+const sheets_1 = require("../services/sheets");
+const docs_1 = require("../services/docs");
+/**
+ * Execute the full AI pipeline for an incoming message.
+ */
+async function executePipeline(message, command) {
+    const config = (0, config_1.getConfig)();
+    try {
+        // 1. Gather chat history context
+        const chatHistory = await gatherChatHistory(message.chatId);
+        // 2. Build context based on command type
+        const context = {
+            message,
+            chatHistory,
+        };
+        // 3. Execute based on command
+        switch (command.type) {
+            case "help":
+                return getHelpResponse();
+            case "search":
+                return await handleSearch(command, context);
+            case "sheet":
+                return await handleSheetQuery(command);
+            case "report":
+                return await handleReport(command, context, config);
+            case "ai":
+                return await handleAI(command, context, config);
+            case "unknown":
+                return "";
+        }
+    }
+    catch (error) {
+        utils_1.logger.error({ err: error }, "Pipeline execution failed");
+        return `❌ Sorry, something went wrong: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+}
+// --- Context Gathering ---
+async function gatherChatHistory(chatId) {
+    try {
+        const config = (0, config_1.getConfig)();
+        const messages = await im_1.imService.getChatHistory(chatId, config.AI_MAX_CONTEXT_MESSAGES);
+        return messages
+            .filter((m) => m.text.trim())
+            .map((m) => ({
+            role: m.isBot ? "assistant" : "user",
+            content: m.text,
+        }))
+            .reverse(); // Chronological order
+    }
+    catch (error) {
+        utils_1.logger.warn({ err: error }, "Failed to gather chat history");
+        return [];
+    }
+}
+// --- Command Handlers ---
+function getHelpResponse() {
+    return [
+        "🤖 **Lark AI Bot — Commands**",
+        "",
+        "• `/help` — Show this help",
+        "• `/search <query>` — Search Lark Base records",
+        "• `/sheet <query>` — Query Lark Sheets data",
+        "• `/report [topic]` — Generate a Docs report",
+        "• `/ai <prompt>` — Ask the AI assistant",
+        "",
+        "Just mention me with any question too!",
+    ].join("\n");
+}
+async function handleSearch(command, context) {
+    const config = (0, config_1.getConfig)();
+    const baseToken = config.LARK_DEFAULT_BASE_TOKEN;
+    const tableId = config.LARK_DEFAULT_SHEET_TOKEN; // Hmm, there's no LARK_DEFAULT_TABLE_ID...
+    if (!baseToken) {
+        return "❌ No default Base configured. Set `LARK_DEFAULT_BASE_TOKEN` in your .env file.";
+    }
+    // For search, we need a table ID — use a system prompt that asks the AI to help if we can't find it
+    if (!tableId) {
+        // Try listing tables
+        try {
+            const { execLarkCLIJSON } = await Promise.resolve().then(() => __importStar(require("../services/lark-cli")));
+            const tables = await execLarkCLIJSON([
+                "base", "+table-list",
+                "--base-token", baseToken,
+                "--as", "user",
+            ]);
+            if (tables.items?.length) {
+                const firstTable = tables.items[0];
+                const records = await base_1.baseService.searchRecords(baseToken, firstTable.table_id, command.query);
+                return formatSearchResults(records, command.query);
+            }
+            return `✅ Connected to Base \`${baseToken}\` but no tables found. Create a table first.`;
+        }
+        catch (error) {
+            return `❌ Could not access Base: ${error instanceof Error ? error.message : "Unknown error"}`;
+        }
+    }
+    const records = await base_1.baseService.searchRecords(baseToken, tableId, command.query);
+    return formatSearchResults(records, command.query);
+}
+function formatSearchResults(records, query) {
+    if (records.length === 0) {
+        return `🔍 No results found for "${query}".`;
+    }
+    const lines = [`🔍 Found ${records.length} result(s) for "${query}":`, ""];
+    for (const record of records.slice(0, 10)) {
+        const fields = Object.entries(record.fields)
+            .map(([k, v]) => `  ${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
+            .join("\n");
+        lines.push(`📋 Record \`${record.record_id}\`:\n${fields}`, "");
+    }
+    if (records.length > 10) {
+        lines.push(`...and ${records.length - 10} more results.`);
+    }
+    return lines.join("\n");
+}
+async function handleSheetQuery(command) {
+    const config = (0, config_1.getConfig)();
+    const sheetToken = config.LARK_DEFAULT_SHEET_TOKEN;
+    if (!sheetToken) {
+        return "❌ No default Sheet configured. Set `LARK_DEFAULT_SHEET_TOKEN` in your .env file.";
+    }
+    try {
+        // Try reading the range directly if it looks like a range (e.g., "A1:B10")
+        const rangeMatch = command.query.match(/^([A-Z]+\d+)(?::([A-Z]+\d+))?$/i);
+        if (rangeMatch) {
+            const range = rangeMatch[0];
+            const data = await sheets_1.sheetsService.readRange(sheetToken, range);
+            return formatSheetData(data.values, range);
+        }
+        // Otherwise treat as a general query — read first 50 rows
+        const data = await sheets_1.sheetsService.readRange(sheetToken, "A1:Z50");
+        return formatSheetData(data.values, "A1:Z50");
+    }
+    catch (error) {
+        return `❌ Sheet query failed: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+}
+function formatSheetData(values, range) {
+    if (!values || values.length === 0) {
+        return `📊 Range \`${range}\` is empty.`;
+    }
+    const lines = [`📊 Sheet data (\`${range}\`):`, ""];
+    const maxRows = Math.min(values.length, 20);
+    for (let i = 0; i < maxRows; i++) {
+        const row = values[i] || [];
+        lines.push(`  Row ${i + 1}: ${row.map((c) => String(c ?? "")).join(" | ")}`);
+    }
+    if (values.length > 20) {
+        lines.push(`  ...and ${values.length - 20} more rows.`);
+    }
+    return lines.join("\n");
+}
+async function handleReport(command, context, config) {
+    const topic = command.topic || "General Report";
+    try {
+        // Gather data from Base if configured
+        let baseData = "";
+        if (config.LARK_DEFAULT_BASE_TOKEN) {
+            const { execLarkCLIJSON } = await Promise.resolve().then(() => __importStar(require("../services/lark-cli")));
+            try {
+                const tables = await execLarkCLIJSON([
+                    "base", "+table-list",
+                    "--base-token", config.LARK_DEFAULT_BASE_TOKEN,
+                    "--as", "user",
+                ]);
+                if (tables.items?.length) {
+                    const firstTable = tables.items[0];
+                    const records = await base_1.baseService.listRecords(config.LARK_DEFAULT_BASE_TOKEN, firstTable.table_id, { limit: 50 });
+                    if (records.items.length) {
+                        baseData = `\n\nAvailable Base data (table: ${firstTable.name}, ${records.items.length} records):\n${JSON.stringify(records.items.slice(0, 10), null, 2)}`;
+                    }
+                }
+            }
+            catch (e) {
+                utils_1.logger.warn({ err: e }, "Could not fetch Base data for report");
+            }
+        }
+        // Ask AI to generate report
+        const reportPrompt = `Generate a structured report on the topic: "${topic}".${baseData}\n\nFormat the report with clear sections, bullet points where appropriate, and a summary. Use Markdown formatting.`;
+        const messages = (0, openrouter_1.buildMessages)("You are a report generation assistant. Generate well-structured, professional reports with clear sections and formatting.", context.chatHistory, reportPrompt);
+        const result = await (0, openrouter_1.chatCompletion)(messages, { temperature: 0.3, maxTokens: 3000 });
+        // Create a Lark Doc with the report
+        try {
+            const doc = await docs_1.docsService.createDoc(`Report: ${topic}`, result.content);
+            return `📄 Report generated and saved to Lark Doc!\n\n**Title:** ${topic}\n**Doc:** ${doc.document.url || `\`${doc.document.document_id}\``}\n\n**Preview:**\n${result.content.slice(0, 500)}...`;
+        }
+        catch (docError) {
+            // If doc creation fails, just return the report text
+            return `📄 **Report: ${topic}**\n\n${result.content}`;
+        }
+    }
+    catch (error) {
+        return `❌ Report generation failed: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+}
+async function handleAI(command, context, config) {
+    const messages = (0, openrouter_1.buildMessages)(config.AI_SYSTEM_PROMPT, context.chatHistory, command.prompt);
+    const result = await (0, openrouter_1.chatCompletion)(messages, { temperature: 0.7, maxTokens: 2000 });
+    return result.content;
+}
+//# sourceMappingURL=pipeline.js.map
