@@ -34,27 +34,44 @@ export function verifyLarkSignature(
     return true;
   }
 
-  const raw = `${timestamp}${nonce}${body}`;
-  const expected = crypto.createHmac("sha256", token).update(raw).digest("hex");
+  const trimmedToken = token.trim();
 
-  if (expected !== signature) {
-    logger.warn(
-      {
-        expected,
-        received: signature,
-        tokenPrefix: token.slice(0, 6) + "…",
-        timestamp,
-        nonce,
-        bodyLength: body.length,
-        bodyPreview: body.slice(0, 100),
-        rawPreview: raw.slice(0, 100),
-      },
-      "Webhook signature mismatch — debug info"
-    );
-    return false;
+  // Try all permutations of timestamp, nonce, body
+  const perms: [string, string][] = [
+    ["ts+nonce+body", `${timestamp}${nonce}${body}`],
+    ["ts+body+nonce", `${timestamp}${body}${nonce}`],
+    ["nonce+ts+body", `${nonce}${timestamp}${body}`],
+    ["nonce+body+ts", `${nonce}${body}${timestamp}`],
+    ["body+ts+nonce", `${body}${timestamp}${nonce}`],
+    ["body+nonce+ts", `${body}${nonce}${timestamp}`],
+  ];
+
+  const results: Record<string, string> = {};
+  for (const [label, raw] of perms) {
+    results[label] = crypto.createHmac("sha256", trimmedToken).update(raw).digest("hex");
   }
 
-  return true;
+  // Check all permutations
+  for (const [label, expected] of Object.entries(results)) {
+    if (expected === signature) {
+      logger.info({ permutation: label }, "Signature matched!");
+      return true;
+    }
+  }
+
+  logger.warn(
+    {
+      received: signature,
+      tokenPrefix: trimmedToken.slice(0, 6) + "…",
+      timestamp,
+      nonce,
+      bodyLength: body.length,
+      bodyPreview: body.slice(0, 100),
+      permutations: results,
+    },
+    "Webhook signature mismatch — all permutations failed"
+  );
+  return false;
 }
 
 // --- Text Extraction from Lark Message Content ---

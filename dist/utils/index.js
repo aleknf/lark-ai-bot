@@ -33,22 +33,37 @@ function verifyLarkSignature(timestamp, nonce, body, signature) {
         exports.logger.warn("LARK_VERIFICATION_TOKEN not set — skipping signature verification");
         return true;
     }
-    const raw = `${timestamp}${nonce}${body}`;
-    const expected = node_crypto_1.default.createHmac("sha256", token).update(raw).digest("hex");
-    if (expected !== signature) {
-        exports.logger.warn({
-            expected,
-            received: signature,
-            tokenPrefix: token.slice(0, 6) + "…",
-            timestamp,
-            nonce,
-            bodyLength: body.length,
-            bodyPreview: body.slice(0, 100),
-            rawPreview: raw.slice(0, 100),
-        }, "Webhook signature mismatch — debug info");
-        return false;
+    const trimmedToken = token.trim();
+    // Try all permutations of timestamp, nonce, body
+    const perms = [
+        ["ts+nonce+body", `${timestamp}${nonce}${body}`],
+        ["ts+body+nonce", `${timestamp}${body}${nonce}`],
+        ["nonce+ts+body", `${nonce}${timestamp}${body}`],
+        ["nonce+body+ts", `${nonce}${body}${timestamp}`],
+        ["body+ts+nonce", `${body}${timestamp}${nonce}`],
+        ["body+nonce+ts", `${body}${nonce}${timestamp}`],
+    ];
+    const results = {};
+    for (const [label, raw] of perms) {
+        results[label] = node_crypto_1.default.createHmac("sha256", trimmedToken).update(raw).digest("hex");
     }
-    return true;
+    // Check all permutations
+    for (const [label, expected] of Object.entries(results)) {
+        if (expected === signature) {
+            exports.logger.info({ permutation: label }, "Signature matched!");
+            return true;
+        }
+    }
+    exports.logger.warn({
+        received: signature,
+        tokenPrefix: trimmedToken.slice(0, 6) + "…",
+        timestamp,
+        nonce,
+        bodyLength: body.length,
+        bodyPreview: body.slice(0, 100),
+        permutations: results,
+    }, "Webhook signature mismatch — all permutations failed");
+    return false;
 }
 // --- Text Extraction from Lark Message Content ---
 /**
