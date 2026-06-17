@@ -36,7 +36,16 @@ function verifyLarkSignature(timestamp, nonce, body, signature) {
     const raw = `${timestamp}${nonce}${body}`;
     const expected = node_crypto_1.default.createHmac("sha256", token).update(raw).digest("hex");
     if (expected !== signature) {
-        exports.logger.warn({ expected, received: signature }, "Webhook signature mismatch");
+        exports.logger.warn({
+            expected,
+            received: signature,
+            tokenPrefix: token.slice(0, 6) + "…",
+            timestamp,
+            nonce,
+            bodyLength: body.length,
+            bodyPreview: body.slice(0, 100),
+            rawPreview: raw.slice(0, 100),
+        }, "Webhook signature mismatch — debug info");
         return false;
     }
     return true;
