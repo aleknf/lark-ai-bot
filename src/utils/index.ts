@@ -28,67 +28,54 @@ export function verifyLarkSignature(
   body: string,
   signature: string
 ): boolean {
-  const config = getConfig();
-  const verifyToken = config.LARK_VERIFICATION_TOKEN?.trim();
-  const appSecret = config.LARK_APP_SECRET?.trim();
+  const cfg = getConfig();
+  const verifyToken = cfg.LARK_VERIFICATION_TOKEN?.trim();
+  const appSecret = cfg.LARK_APP_SECRET?.trim();
 
-  // Keys to try — both verification token and app secret
+  // Also extract token from inside the event body header
+  let bodyToken: string | undefined;
+  try {
+    const parsed = JSON.parse(body);
+    bodyToken = parsed?.header?.token || parsed?.token || undefined;
+  } catch { /* ignore */ }
+
+  // Collect all keys to try
   const keys: [string, string][] = [];
-  if (verifyToken) keys.push(["verification_token", verifyToken]);
-  if (appSecret && appSecret !== verifyToken) keys.push(["app_secret", appSecret]);
+  if (verifyToken) keys.push(["env_verify_token", verifyToken]);
+  if (appSecret) keys.push(["env_app_secret", appSecret]);
+  if (bodyToken && bodyToken !== verifyToken && bodyToken !== appSecret) {
+    keys.push(["body_header_token", bodyToken]);
+  }
 
   if (keys.length === 0) {
-    logger.warn("No verification keys configured — skipping signature verification");
+    logger.warn("No verification keys available — skipping signature verification");
     return true;
   }
 
   const raw = `${timestamp}${nonce}${body}`;
 
-  // Approach 1: HMAC-SHA256(key, raw)
+  // Try HMAC-SHA256
   for (const [keyName, key] of keys) {
-    const expected = crypto.createHmac("sha256", key).update(raw).digest("hex");
-    if (expected === signature) {
-      logger.info({ method: "hmac", keyName }, "Signature matched!");
+    if (crypto.createHmac("sha256", key).update(raw).digest("hex") === signature) {
+      logger.info({ keyName, method: "hmac-sha256" }, "✅ Signature matched!");
       return true;
     }
   }
 
-  // Approach 2: plain SHA256(raw + key)
-  for (const [keyName, key] of keys) {
-    const expected = crypto.createHash("sha256").update(raw + key).digest("hex");
-    if (expected === signature) {
-      logger.info({ method: "sha256(raw+key)", keyName }, "Signature matched!");
-      return true;
-    }
-  }
-
-  // Approach 3: plain SHA256(key + raw)
-  for (const [keyName, key] of keys) {
-    const expected = crypto.createHash("sha256").update(key + raw).digest("hex");
-    if (expected === signature) {
-      logger.info({ method: "sha256(key+raw)", keyName }, "Signature matched!");
-      return true;
-    }
-  }
-
-  // All failed — log details
+  // All failed — log
   const results: Record<string, string> = {};
   for (const [keyName, key] of keys) {
     results[`hmac_${keyName}`] = crypto.createHmac("sha256", key).update(raw).digest("hex");
-    results[`sha256_raw+${keyName}`] = crypto.createHash("sha256").update(raw + key).digest("hex");
-    results[`sha256_${keyName}+raw`] = crypto.createHash("sha256").update(key + raw).digest("hex");
   }
 
   logger.warn(
     {
       received: signature,
       keysTried: keys.map(([n]) => n),
-      timestamp,
-      nonce,
-      bodyLength: body.length,
+      bodyTokenMatch: bodyToken === verifyToken ? "matches_env" : bodyToken ? "differs" : "absent",
       computed: results,
     },
-    "Webhook signature mismatch — all algorithms failed"
+    "Webhook signature mismatch"
   );
   return false;
 }
