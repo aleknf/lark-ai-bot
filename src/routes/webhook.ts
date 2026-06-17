@@ -41,7 +41,8 @@ webhookRouter.post("/webhook", async (req: Request, res: Response) => {
     const signature = req.headers["x-lark-signature"] as string;
 
     if (timestamp && nonce && signature) {
-      const rawBody = JSON.stringify(body);
+      // Use raw body buffer for accurate signature verification
+      const rawBody = (req as any).rawBody?.toString("utf8") || JSON.stringify(body);
       if (!verifyLarkSignature(timestamp, nonce, rawBody, signature)) {
         res.status(401).json({ error: "Invalid signature" });
         return;

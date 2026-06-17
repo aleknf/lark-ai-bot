@@ -11,7 +11,15 @@ const app = express();
 const config = getConfig();
 
 // --- Middleware ---
-app.use(express.json({ limit: "1mb" }));
+// Capture raw body buffer for webhook signature verification
+app.use(
+  express.json({
+    limit: "1mb",
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 
 // Request logging
