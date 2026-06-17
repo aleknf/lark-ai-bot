@@ -11,15 +11,13 @@ const app = express();
 const config = getConfig();
 
 // --- Middleware ---
-// Capture raw body buffer for webhook signature verification
-app.use(
-  express.json({
-    limit: "1mb",
-    verify: (req, _res, buf) => {
-      (req as any).rawBody = buf;
-    },
-  })
-);
+// JSON body parser for all routes EXCEPT /webhook (which uses raw parser)
+app.use((req, _res, next) => {
+  if (req.path === "/webhook" && req.method === "POST") {
+    return next(); // skip — webhook route has its own raw parser
+  }
+  express.json({ limit: "1mb" })(req, _res, next);
+});
 app.use(express.urlencoded({ extended: true }));
 
 // Request logging

@@ -11,14 +11,24 @@ exports.webhookRouter = (0, express_1.Router)();
 /**
  * POST /webhook
  * Receives Lark event subscription callbacks.
- *
- * Lark sends two types of requests:
- * 1. URL Verification (challenge) — responds with the challenge token
- * 2. Event Callbacks — processes and responds with 200 OK
+ * Uses raw body parser for exact signature verification,
+ * then manually parses JSON.
  */
-exports.webhookRouter.post("/webhook", async (req, res) => {
+exports.webhookRouter.post("/webhook", (0, express_1.raw)({ type: "*/*", limit: "1mb" }), async (req, res) => {
     try {
-        const body = req.body;
+        // Get raw body as UTF-8 string (exact bytes from HTTP request)
+        const rawBody = req.body instanceof Buffer
+            ? req.body.toString("utf8")
+            : String(req.body || "");
+        // Parse JSON manually
+        let body;
+        try {
+            body = JSON.parse(rawBody);
+        }
+        catch {
+            res.status(400).json({ error: "Invalid JSON" });
+            return;
+        }
         // --- URL Verification (v2) ---
         if (body.challenge) {
             utils_1.logger.info("Received URL verification challenge");
@@ -36,8 +46,6 @@ exports.webhookRouter.post("/webhook", async (req, res) => {
         const nonce = req.headers["x-lark-request-nonce"];
         const signature = req.headers["x-lark-signature"];
         if (timestamp && nonce && signature) {
-            // Use raw body buffer for accurate signature verification
-            const rawBody = req.rawBody?.toString("utf8") || JSON.stringify(body);
             if (!(0, utils_1.verifyLarkSignature)(timestamp, nonce, rawBody, signature)) {
                 res.status(401).json({ error: "Invalid signature" });
                 return;
