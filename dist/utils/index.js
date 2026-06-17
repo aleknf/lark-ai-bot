@@ -28,41 +28,41 @@ exports.logger = (0, pino_1.default)({
  * Uses HMAC-SHA256 with the verification token as the key.
  */
 function verifyLarkSignature(timestamp, nonce, body, signature) {
-    const token = (0, config_1.getConfig)().LARK_VERIFICATION_TOKEN;
-    if (!token) {
-        exports.logger.warn("LARK_VERIFICATION_TOKEN not set — skipping signature verification");
+    const config = (0, config_1.getConfig)();
+    const verifyToken = config.LARK_VERIFICATION_TOKEN?.trim();
+    const appSecret = config.LARK_APP_SECRET?.trim();
+    // Keys to try — both verification token and app secret
+    const keys = [];
+    if (verifyToken)
+        keys.push(["verification_token", verifyToken]);
+    if (appSecret && appSecret !== verifyToken)
+        keys.push(["app_secret", appSecret]);
+    if (keys.length === 0) {
+        exports.logger.warn("No verification keys configured — skipping signature verification");
         return true;
     }
-    const trimmedToken = token.trim();
-    // Try all permutations of timestamp, nonce, body
-    const perms = [
-        ["ts+nonce+body", `${timestamp}${nonce}${body}`],
-        ["ts+body+nonce", `${timestamp}${body}${nonce}`],
-        ["nonce+ts+body", `${nonce}${timestamp}${body}`],
-        ["nonce+body+ts", `${nonce}${body}${timestamp}`],
-        ["body+ts+nonce", `${body}${timestamp}${nonce}`],
-        ["body+nonce+ts", `${body}${nonce}${timestamp}`],
-    ];
-    const results = {};
-    for (const [label, raw] of perms) {
-        results[label] = node_crypto_1.default.createHmac("sha256", trimmedToken).update(raw).digest("hex");
-    }
-    // Check all permutations
-    for (const [label, expected] of Object.entries(results)) {
+    const raw = `${timestamp}${nonce}${body}`;
+    for (const [keyName, key] of keys) {
+        const expected = node_crypto_1.default.createHmac("sha256", key).update(raw).digest("hex");
         if (expected === signature) {
-            exports.logger.info({ permutation: label }, "Signature matched!");
+            exports.logger.info({ keyName }, "Signature matched!");
             return true;
         }
     }
+    // All failed — log details
+    const results = {};
+    for (const [keyName, key] of keys) {
+        results[`hmac_with_${keyName}`] = node_crypto_1.default.createHmac("sha256", key).update(raw).digest("hex");
+    }
     exports.logger.warn({
         received: signature,
-        tokenPrefix: trimmedToken.slice(0, 6) + "…",
+        keysTried: keys.map(([n]) => n),
         timestamp,
         nonce,
         bodyLength: body.length,
-        bodyPreview: body.slice(0, 100),
-        permutations: results,
-    }, "Webhook signature mismatch — all permutations failed");
+        bodyPreview: body.slice(0, 120),
+        computed: results,
+    }, "Webhook signature mismatch — neither verification_token nor app_secret matched");
     return false;
 }
 // --- Text Extraction from Lark Message Content ---
