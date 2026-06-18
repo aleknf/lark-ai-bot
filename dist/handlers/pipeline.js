@@ -287,13 +287,17 @@ async function handleAI(command, context, config) {
     const prompt = command.prompt.toLowerCase();
     const isActivityQuery = /aktivitas|activity|schedule|jadwal|kalender|calendar|task|tugas|meeting|rapat|minggu ini|hari ini|this week|today|besok|tomorrow|agenda/i.test(prompt);
     // Detect chat summarization requests: "rangkum chat dari X", "summarize chat from X", etc.
+    // Match pattern: rangkum/ringkas/summarize + chat/pesan + dari/dengan/from/with + PersonName [+ time]
     const chatSummaryMatch = command.prompt.match(/(?:rangkum|ringkas|summarize|ringkasan|summary|kesimpulan)\s+(?:chat|pesan|message|obrolan|percakapan|dm)\s+(?:dari|dengan|from|with)\s+(.+)/i);
-    // Also match patterns like "rangkum chat 'Lia Pitaloka' seminggu ini"
-    const chatSummaryMatch2 = command.prompt.match(/(?:rangkum|ringkas|summarize|ringkasan|summary)\s+(?:chat|pesan|message|obrolan)\s+['""](.+?)['""]/i);
+    // Also match quoted patterns like "rangkum chat 'Lia Pitaloka' seminggu ini"
+    const chatSummaryMatch2 = command.prompt.match(/(?:rangkum|ringkas|summarize|ringkasan|summary)\s+(?:chat|pesan|message|obrolan)\s+['"](.+?)['"]/i);
     let chatPerson = chatSummaryMatch?.[1]?.trim() || chatSummaryMatch2?.[1]?.trim();
-    // Strip trailing time phrases from the captured name
+    // Post-process: strip trailing time phrases first, then surrounding quotes
     if (chatPerson) {
-        chatPerson = chatPerson.replace(/\s+(?:seminggu|sepekan|minggu\s+ini|minggu\s+lalu|minggu\s+depan|hari\s+ini|hari\s+kemarin|besok|kemarin|bulan\s+ini|bulan\s+lalu|this\s+week|last\s+week|next\s+week|today|yesterday|tomorrow|this\s+month|last\s+month)(?:\s+(?:ini|terakhir|lalu))?\s*$/i, "").trim();
+        chatPerson = chatPerson
+            .replace(/\s+(?:seminggu|sepekan|minggu\s+ini|minggu\s+lalu|minggu\s+depan|hari\s+ini|hari\s+kemarin|besok|kemarin|bulan\s+ini|bulan\s+lalu|this\s+week|last\s+week|next\s+week|today|yesterday|tomorrow|this\s+month|last\s+month)(?:\s+(?:ini|terakhir|lalu))?\s*$/i, "")
+            .replace(/^['"]|['"]$/g, "") // strip surrounding quotes (after time is removed)
+            .trim();
     }
     let dataContext = "";
     if (chatPerson) {
