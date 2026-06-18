@@ -70,13 +70,18 @@ function formatTime(isoStr) {
 // ============================================
 async function fetchCalendarEvents(start, end) {
     try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await (0, lark_cli_1.execLarkCLIJSON)([
             "calendar", "+agenda",
             "--start", start,
             "--end", end,
             "--as", "user",
         ]);
-        const events = result?.events || [];
+        const events = result?.events || result?.items || result?.data?.events || [];
+        utils_1.logger.info({ eventCount: events.length, resultKeys: Object.keys(result || {}) }, "Calendar events fetched");
+        if (events.length === 0) {
+            utils_1.logger.warn({ rawResult: JSON.stringify(result).slice(0, 300) }, "Empty calendar result — raw data");
+        }
         return events
             .filter((e) => {
             const summary = (e.summary || "").toLowerCase();
@@ -106,9 +111,15 @@ async function fetchCalendarEvents(start, end) {
 }
 async function fetchTasks() {
     try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await (0, lark_cli_1.execLarkCLIJSON)(["task", "+get-my-tasks", "--as", "user"]);
-        const tasks = result?.tasks || [];
+        const tasks = result?.tasks || result?.items || result?.data?.tasks || [];
+        utils_1.logger.info({ taskCount: tasks.length, resultKeys: Object.keys(result || {}) }, "Tasks fetched");
+        if (tasks.length === 0) {
+            utils_1.logger.warn({ rawResult: JSON.stringify(result).slice(0, 300) }, "Empty task result — raw data");
+        }
         const now = new Date();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return tasks.map((t) => {
             const dueStr = t.due?.date || t.due?.timestamp || "";
             const isOverdue = dueStr ? new Date(dueStr) < now : false;

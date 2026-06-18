@@ -125,22 +125,27 @@ function formatTime(isoStr: string): string {
 
 async function fetchCalendarEvents(start: string, end: string): Promise<CalendarEvent[]> {
   try {
-    const result = await execLarkCLIJSON<{
-      events?: Array<{
-        summary?: string;
-        start?: { dateTime?: string; date?: string };
-        end?: { dateTime?: string; date?: string };
-        status?: string;
-      }>;
-    }>([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result: any = await execLarkCLIJSON([
       "calendar", "+agenda",
       "--start", start,
       "--end", end,
       "--as", "user",
     ]);
 
-    const events = result?.events || [];
-    return events
+    const events = result?.events || result?.items || result?.data?.events || [];
+    logger.info({ eventCount: events.length, resultKeys: Object.keys(result || {}) }, "Calendar events fetched");
+
+    if (events.length === 0) {
+      logger.warn({ rawResult: JSON.stringify(result).slice(0, 300) }, "Empty calendar result — raw data");
+    }
+
+    return (events as Array<{
+      summary?: string;
+      start?: { dateTime?: string; date?: string };
+      end?: { dateTime?: string; date?: string };
+      status?: string;
+    }>)
       .filter((e) => {
         const summary = (e.summary || "").toLowerCase();
         // Filter out non-work events
@@ -170,20 +175,20 @@ async function fetchCalendarEvents(start: string, end: string): Promise<Calendar
 
 async function fetchTasks(): Promise<TaskItem[]> {
   try {
-    const result = await execLarkCLIJSON<{
-      tasks?: Array<{
-        summary?: string;
-        description?: string;
-        due?: { date?: string; timestamp?: string };
-        is_completed?: boolean;
-        status?: string;
-      }>;
-    }>(["task", "+get-my-tasks", "--as", "user"]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result: any = await execLarkCLIJSON(["task", "+get-my-tasks", "--as", "user"]);
 
-    const tasks = result?.tasks || [];
+    const tasks = result?.tasks || result?.items || result?.data?.tasks || [];
+    logger.info({ taskCount: tasks.length, resultKeys: Object.keys(result || {}) }, "Tasks fetched");
+
+    if (tasks.length === 0) {
+      logger.warn({ rawResult: JSON.stringify(result).slice(0, 300) }, "Empty task result — raw data");
+    }
+
     const now = new Date();
 
-    return tasks.map((t) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return tasks.map((t: any) => {
       const dueStr = t.due?.date || t.due?.timestamp || "";
       const isOverdue = dueStr ? new Date(dueStr) < now : false;
       const isCompleted = t.is_completed || t.status === "completed";
