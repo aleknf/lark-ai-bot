@@ -287,10 +287,14 @@ async function handleAI(command, context, config) {
     const prompt = command.prompt.toLowerCase();
     const isActivityQuery = /aktivitas|activity|schedule|jadwal|kalender|calendar|task|tugas|meeting|rapat|minggu ini|hari ini|this week|today|besok|tomorrow|agenda/i.test(prompt);
     // Detect chat summarization requests: "rangkum chat dari X", "summarize chat from X", etc.
-    const chatSummaryMatch = command.prompt.match(/(?:rangkum|ringkas|summarize|ringkasan|summary|kesimpulan)\s+(?:chat|pesan|message|obrolan|percakapan|dm)\s+(?:dari|dengan|from|with)\s+(.+?)(?:\s+(?:seminggu|minggu ini|hari ini|minggu lalu|bulan ini|this week|today|last week|this month|sebulan))?\s*$/i);
-    // Also match Indonesian patterns like "rangkum chat 'Lia Pitaloka' seminggu ini"
+    const chatSummaryMatch = command.prompt.match(/(?:rangkum|ringkas|summarize|ringkasan|summary|kesimpulan)\s+(?:chat|pesan|message|obrolan|percakapan|dm)\s+(?:dari|dengan|from|with)\s+(.+)/i);
+    // Also match patterns like "rangkum chat 'Lia Pitaloka' seminggu ini"
     const chatSummaryMatch2 = command.prompt.match(/(?:rangkum|ringkas|summarize|ringkasan|summary)\s+(?:chat|pesan|message|obrolan)\s+['""](.+?)['""]/i);
-    const chatPerson = chatSummaryMatch?.[1]?.trim() || chatSummaryMatch2?.[1]?.trim();
+    let chatPerson = chatSummaryMatch?.[1]?.trim() || chatSummaryMatch2?.[1]?.trim();
+    // Strip trailing time phrases from the captured name
+    if (chatPerson) {
+        chatPerson = chatPerson.replace(/\s+(?:seminggu|sepekan|minggu\s+ini|minggu\s+lalu|minggu\s+depan|hari\s+ini|hari\s+kemarin|besok|kemarin|bulan\s+ini|bulan\s+lalu|this\s+week|last\s+week|next\s+week|today|yesterday|tomorrow|this\s+month|last\s+month)(?:\s+(?:ini|terakhir|lalu))?\s*$/i, "").trim();
+    }
     let dataContext = "";
     if (chatPerson) {
         try {
@@ -423,7 +427,7 @@ async function fetchChatSummaryContext(personName) {
     }
     const user = users[0];
     const userId = user.open_id || user.id;
-    const userName = user.name || user.display_name || personName;
+    const userName = user.localized_name || user.name || user.display_name || personName;
     if (!userId) {
         return `⚠️ Found "${userName}" but could not determine user ID for fetching messages.`;
     }
@@ -450,27 +454,65 @@ async function fetchChatSummaryContext(personName) {
         "--sort", "asc",
         "--as", "user",
     ]);
-    const messages = msgResult?.items || msgResult?.data?.items || [];
+    // Response uses data.messages, not data.items
+    const messages = msgResult?.data?.messages || msgResult?.items || msgResult?.data?.items || [];
     if (messages.length === 0) {
         return `📭 No messages found with **${userName}** in the last 7 days.`;
     }
     parts.push(`💬 **Chat with ${userName}** — last 7 days (${messages.length} messages):`);
     parts.push("");
     for (const msg of messages) {
-        const sender = msg.sender?.id || msg.sender_id || "";
-        const isMe = sender === userId ? false : sender === "me";
-        const senderName = msg.sender_name || (msg.sender?.id === userId ? userName : "You");
-        const text = extractMessageText(msg) || "[media/file]";
-        const time = msg.create_time
-            ? new Date(parseInt(msg.create_time, 10) * 1000).toLocaleString("en-US", {
-                month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
-            })
-            : "?";
-        parts.push(`  [${time}] ${senderName}: ${text}`);
+        // Sender info: use sender.name from the nested object
+        const senderName = msg.sender?.name || msg.sender_name || "Unknown";
+        // Determine if it's from the other person or from you
+        const senderId = msg.sender?.id || msg.sender_id || "";
+        const label = senderId === userId ? userName : "You";
+        const text = extractChatMessageText(msg) || "[media/file]";
+        // create_time can be a string like "2026-06-15 11:23" or a unix timestamp
+        const time = formatChatTime(msg.create_time);
+        parts.push(`  [${time}] ${label}: ${text}`);
     }
     return parts.join("\n");
 }
-function extractMessageText(item) {
+/**
+ * Format a chat message create_time to a readable string.
+ * Handles both ISO-like strings ("2026-06-15 11:23") and unix timestamps.
+ */
+function formatChatTime(createTime) {
+    if (!createTime)
+        return "?";
+    try {
+        let d;
+        if (typeof createTime === "string" && createTime.includes("-")) {
+            // String format like "2026-06-15 11:23"
+            d = new Date(createTime.replace(" ", "T"));
+        }
+        else {
+            // Unix timestamp (seconds)
+            d = new Date(parseInt(String(createTime), 10) * 1000);
+        }
+        if (isNaN(d.getTime()))
+            return "?";
+        return d.toLocaleString("en-US", {
+            month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+        });
+    }
+    catch {
+        return "?";
+    }
+}
+/**
+ * Extract text from a chat message.
+ * Handles both the flat `content` field (from +chat-messages-list) and
+ * the nested `body.content` JSON structure (from webhook events).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractChatMessageText(item) {
+    // Flat content field (from +chat-messages-list)
+    if (typeof item.content === "string" && item.content) {
+        return item.content;
+    }
+    // Nested body.content (from webhook/event messages)
     if (!item.body?.content)
         return "";
     try {
