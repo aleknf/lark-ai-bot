@@ -29,7 +29,7 @@ const configSchema = zod_1.z.object({
     LARK_DEFAULT_SHEET_TOKEN: zod_1.z.string().optional(),
     // AI Pipeline
     AI_MAX_CONTEXT_MESSAGES: zod_1.z.coerce.number().default(20),
-    AI_SYSTEM_PROMPT: zod_1.z.string().default("You are a helpful Lark bot assistant. You can help users search data in Lark Base, query Sheets, generate Docs reports, and answer questions. Be concise and helpful."),
+    AI_SYSTEM_PROMPT: zod_1.z.string().default("You are a helpful Lark AI assistant with access to the user's real Lark data (calendar, tasks, Base, Sheets, Docs). When the user asks about their activities, schedule, meetings, or tasks, you will receive their actual data as context — use it to give accurate, specific answers with dates and times. Never say you cannot access their data. If context data is provided above, reference it directly. Be concise, friendly, and helpful. Respond in the same language the user uses."),
 });
 let _config = null;
 function getConfig() {

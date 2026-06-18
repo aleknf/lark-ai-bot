@@ -307,12 +307,114 @@ async function handleAI(
   context: PipelineContext,
   config: ReturnType<typeof getConfig>
 ): Promise<string> {
-  const messages = buildMessages(
-    config.AI_SYSTEM_PROMPT,
-    context.chatHistory,
-    command.prompt
-  );
+  // Detect if user is asking about their activities, schedule, calendar, or tasks
+  const prompt = command.prompt.toLowerCase();
+  const isActivityQuery = /aktivitas|activity|schedule|jadwal|kalender|calendar|task|tugas|meeting|rapat|minggu ini|hari ini|this week|today|besok|tomorrow|agenda/i.test(prompt);
 
+  let dataContext = "";
+  if (isActivityQuery) {
+    try {
+      dataContext = await fetchUserActivityContext();
+    } catch (err) {
+      logger.warn({ err }, "Failed to fetch activity context for AI query");
+    }
+  }
+
+  const systemPrompt = dataContext
+    ? `${config.AI_SYSTEM_PROMPT}\n\n--- USER DATA CONTEXT ---\n${dataContext}\n---\nUse the data above to answer the user's question accurately. Always include specific dates, times, and event/task names from the data.`
+    : config.AI_SYSTEM_PROMPT;
+
+  const messages = buildMessages(systemPrompt, context.chatHistory, command.prompt);
   const result = await chatCompletion(messages, { temperature: 0.7, maxTokens: 2000 });
   return result.content;
+}
+
+/**
+ * Fetch calendar events and tasks for the current user to provide as AI context.
+ */
+async function fetchUserActivityContext(): Promise<string> {
+  const { execLarkCLIJSON } = await import("../services/lark-cli");
+  const parts: string[] = [];
+
+  // Fetch this week's calendar
+  try {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const dayOfWeek = now.getDay();
+    const thisMonday = new Date(now);
+    thisMonday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+    const thisSunday = new Date(thisMonday);
+    thisSunday.setDate(thisMonday.getDate() + 6);
+    const tz = now.getTimezoneOffset();
+    const tzSign = tz <= 0 ? "+" : "-";
+    const tzH = pad(Math.abs(Math.floor(tz / 60)));
+    const tzM = pad(Math.abs(tz % 60));
+    const fmt = (d: Date, hh: string) =>
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${hh}:00:00${tzSign}${tzH}:${tzM}`;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const calResult: any = await execLarkCLIJSON([
+      "calendar", "+agenda",
+      "--start", fmt(thisMonday, "00"),
+      "--end", fmt(thisSunday, "23"),
+      "--as", "user",
+    ]);
+
+    const events = Array.isArray(calResult?.data) ? calResult.data : (calResult?.events || []);
+    if (events.length > 0) {
+      parts.push("📅 **This Week's Calendar:**");
+      for (const ev of events) {
+        const summary = ev.summary || "Untitled";
+        const startObj = ev.start_time || ev.start;
+        const endObj = ev.end_time || ev.end;
+        const startStr = typeof startObj === "object" && startObj
+          ? (startObj.datetime || startObj.date || "")
+          : String(startObj || "");
+        const endStr = typeof endObj === "object" && endObj
+          ? (endObj.datetime || endObj.date || "")
+          : String(endObj || "");
+        const s = startStr ? new Date(startStr) : null;
+        const e = endStr ? new Date(endStr) : null;
+        const dateStr = s ? s.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "?";
+        const timeStr = s && e
+          ? `${s.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })} – ${e.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}`
+          : "?";
+        parts.push(`  • ${dateStr} | ${timeStr} | ${summary}`);
+      }
+    } else {
+      parts.push("📅 **This Week's Calendar:** No meetings found.");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Calendar fetch for AI context failed");
+  }
+
+  // Fetch tasks
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const taskResult: any = await execLarkCLIJSON(["task", "+get-my-tasks", "--as", "user"]);
+    const tasks = taskResult?.data?.items || taskResult?.items || [];
+    if (tasks.length > 0) {
+      const now = new Date();
+      parts.push("");
+      parts.push("✅ **Your Tasks:**");
+      for (const t of tasks) {
+        const name = t.summary || "Untitled Task";
+        const dueStr = typeof t.due === "object" && t.due
+          ? (t.due.date || t.due.timestamp || "")
+          : (t.due_at || t.due || "");
+        const isOverdue = dueStr ? new Date(dueStr) < now : false;
+        const status = t.is_completed || t.completed ? "✅" : isOverdue ? "⚠️ OVERDUE" : "⏳";
+        const dueLabel = dueStr
+          ? ` — Due: ${new Date(dueStr).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+          : "";
+        parts.push(`  ${status} ${name}${dueLabel}`);
+      }
+    } else {
+      parts.push("✅ **Your Tasks:** No tasks found.");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Task fetch for AI context failed");
+  }
+
+  return parts.join("\n");
 }
