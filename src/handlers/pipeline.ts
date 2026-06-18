@@ -311,8 +311,25 @@ async function handleAI(
   const prompt = command.prompt.toLowerCase();
   const isActivityQuery = /aktivitas|activity|schedule|jadwal|kalender|calendar|task|tugas|meeting|rapat|minggu ini|hari ini|this week|today|besok|tomorrow|agenda/i.test(prompt);
 
+  // Detect chat summarization requests: "rangkum chat dari X", "summarize chat from X", etc.
+  const chatSummaryMatch = command.prompt.match(
+    /(?:rangkum|ringkas|summarize|ringkasan|summary|kesimpulan)\s+(?:chat|pesan|message|obrolan|percakapan|dm)\s+(?:dari|dengan|from|with)\s+(.+?)(?:\s+(?:seminggu|minggu ini|hari ini|minggu lalu|bulan ini|this week|today|last week|this month|sebulan))?\s*$/i
+  );
+  // Also match Indonesian patterns like "rangkum chat 'Lia Pitaloka' seminggu ini"
+  const chatSummaryMatch2 = command.prompt.match(
+    /(?:rangkum|ringkas|summarize|ringkasan|summary)\s+(?:chat|pesan|message|obrolan)\s+['""](.+?)['""]/i
+  );
+  const chatPerson = chatSummaryMatch?.[1]?.trim() || chatSummaryMatch2?.[1]?.trim();
+
   let dataContext = "";
-  if (isActivityQuery) {
+  if (chatPerson) {
+    try {
+      dataContext = await fetchChatSummaryContext(chatPerson);
+    } catch (err) {
+      logger.warn({ err }, "Failed to fetch chat summary context");
+      return `❌ Could not fetch chat history for **${chatPerson}**: ${err instanceof Error ? err.message : "Unknown error"}`;
+    }
+  } else if (isActivityQuery) {
     try {
       dataContext = await fetchUserActivityContext();
     } catch (err) {
@@ -417,4 +434,108 @@ async function fetchUserActivityContext(): Promise<string> {
   }
 
   return parts.join("\n");
+}
+
+/**
+ * Fetch and format chat messages from a specific person for AI summarization.
+ * Searches for the user by name, then fetches recent P2P messages.
+ */
+async function fetchChatSummaryContext(personName: string): Promise<string> {
+  const { execLarkCLIJSON } = await import("../services/lark-cli");
+  const parts: string[] = [];
+
+  // Step 1: Search for the user
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const searchResult: any = await execLarkCLIJSON([
+    "contact", "+search-user",
+    "--query", personName,
+    "--as", "user",
+  ]);
+
+  const users = searchResult?.users || searchResult?.data?.users || [];
+  if (users.length === 0) {
+    return `⚠️ Could not find a user matching "${personName}". Please check the name.`;
+  }
+
+  const user = users[0];
+  const userId = user.open_id || user.id;
+  const userName = user.name || user.display_name || personName;
+
+  if (!userId) {
+    return `⚠️ Found "${userName}" but could not determine user ID for fetching messages.`;
+  }
+
+  // Step 2: Fetch messages from the last 7 days
+  const now = new Date();
+  const weekAgo = new Date(now);
+  weekAgo.setDate(now.getDate() - 7);
+
+  const iso = (d: Date, isEnd: boolean) => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const tz = d.getTimezoneOffset();
+    const tzSign = tz <= 0 ? "+" : "-";
+    const tzH = pad(Math.abs(Math.floor(tz / 60)));
+    const tzM = pad(Math.abs(tz % 60));
+    const hh = isEnd ? "23" : "00";
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${hh}:59:59${tzSign}${tzH}:${tzM}`;
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const msgResult: any = await execLarkCLIJSON([
+    "im", "+chat-messages-list",
+    "--user-id", userId,
+    "--start", iso(weekAgo, false),
+    "--end", iso(now, true),
+    "--page-size", "50",
+    "--sort", "asc",
+    "--as", "user",
+  ]);
+
+  const messages = msgResult?.items || msgResult?.data?.items || [];
+  if (messages.length === 0) {
+    return `📭 No messages found with **${userName}** in the last 7 days.`;
+  }
+
+  parts.push(`💬 **Chat with ${userName}** — last 7 days (${messages.length} messages):`);
+  parts.push("");
+
+  for (const msg of messages) {
+    const sender = msg.sender?.id || msg.sender_id || "";
+    const isMe = sender === userId ? false : sender === "me";
+    const senderName = msg.sender_name || (msg.sender?.id === userId ? userName : "You");
+    const text = extractMessageText(msg) || "[media/file]";
+    const time = msg.create_time
+      ? new Date(parseInt(msg.create_time, 10) * 1000).toLocaleString("en-US", {
+          month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+        })
+      : "?";
+
+    parts.push(`  [${time}] ${senderName}: ${text}`);
+  }
+
+  return parts.join("\n");
+}
+
+function extractMessageText(item: { body?: { content?: string } }): string {
+  if (!item.body?.content) return "";
+  try {
+    const content = typeof item.body.content === "string"
+      ? JSON.parse(item.body.content)
+      : item.body.content;
+    if (content.text) return content.text;
+    if (content.content) {
+      const texts: string[] = [];
+      for (const block of content.content) {
+        if (Array.isArray(block)) {
+          for (const el of block) {
+            if (el.tag === "text" && el.text) texts.push(el.text);
+          }
+        }
+      }
+      return texts.join("");
+    }
+    return "";
+  } catch {
+    return item.body.content || "";
+  }
 }
