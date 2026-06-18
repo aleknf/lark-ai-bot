@@ -11,7 +11,7 @@ exports.docsService = {
         utils_1.logger.debug({ title }, "Creating Lark Doc");
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await (0, lark_cli_1.execLarkCLIJSON)([
-            "doc", "+create",
+            "docs", "+create",
             "--title", title,
             "--content", content,
             "--as", "user",
@@ -27,7 +27,7 @@ exports.docsService = {
     async appendContent(docToken, content) {
         utils_1.logger.debug({ docToken }, "Appending to Lark Doc");
         await (0, lark_cli_1.execLarkCLIJSON)([
-            "doc", "+update",
+            "docs", "+update",
             "--token", docToken,
             "--content", content,
             "--as", "user",
@@ -36,7 +36,7 @@ exports.docsService = {
     async getDoc(docToken) {
         utils_1.logger.debug({ docToken }, "Fetching Lark Doc");
         return (0, lark_cli_1.execLarkCLIJSON)([
-            "doc", "+fetch",
+            "docs", "+fetch",
             "--token", docToken,
             "--as", "user",
         ]);

@@ -18,7 +18,7 @@ export const docsService: DocsService = {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await execLarkCLIJSON<any>([
-      "doc", "+create",
+      "docs", "+create",
       "--title", title,
       "--content", content,
       "--as", "user",
@@ -37,7 +37,7 @@ export const docsService: DocsService = {
     logger.debug({ docToken }, "Appending to Lark Doc");
 
     await execLarkCLIJSON([
-      "doc", "+update",
+      "docs", "+update",
       "--token", docToken,
       "--content", content,
       "--as", "user",
@@ -48,7 +48,7 @@ export const docsService: DocsService = {
     logger.debug({ docToken }, "Fetching Lark Doc");
 
     return execLarkCLIJSON([
-      "doc", "+fetch",
+      "docs", "+fetch",
       "--token", docToken,
       "--as", "user",
     ]);
