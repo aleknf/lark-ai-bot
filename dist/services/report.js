@@ -89,8 +89,15 @@ async function fetchCalendarEvents(start, end) {
         })
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             .map((e) => {
-            const startTime = e.start_time || e.start?.dateTime || e.start?.date || "";
-            const endTime = e.end_time || e.end?.dateTime || e.end?.date || "";
+            // start_time / end_time are objects {datetime, timezone} from the API
+            const rawStart = e.start_time || e.start?.dateTime || e.start?.date || "";
+            const rawEnd = e.end_time || e.end?.dateTime || e.end?.date || "";
+            const startTime = typeof rawStart === "object" && rawStart !== null
+                ? (rawStart.datetime || rawStart.date || "")
+                : String(rawStart);
+            const endTime = typeof rawEnd === "object" && rawEnd !== null
+                ? (rawEnd.datetime || rawEnd.date || "")
+                : String(rawEnd);
             const duration = startTime && endTime
                 ? Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000)
                 : 0;
@@ -98,7 +105,7 @@ async function fetchCalendarEvents(start, end) {
                 summary: e.summary || "Untitled",
                 startTime,
                 endTime,
-                status: e.status || "unknown",
+                status: e.status || e.free_busy_status || "unknown",
                 duration,
             };
         });
@@ -114,13 +121,22 @@ async function fetchTasks() {
         const result = await (0, lark_cli_1.execLarkCLIJSON)(["task", "+get-my-tasks", "--as", "user"]);
         // Task response: { ok, data: { items: [...] } }, not { tasks: [...] }
         const tasks = result?.data?.items || result?.tasks || result?.items || [];
-        utils_1.logger.info({ taskCount: tasks.length }, "Tasks fetched");
+        if (tasks.length > 0) {
+            utils_1.logger.info({ taskCount: tasks.length, sampleKeys: Object.keys(tasks[0]) }, "Tasks fetched");
+        }
+        else {
+            utils_1.logger.info("No tasks found in response");
+        }
         const now = new Date();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return tasks.map((t) => {
-            const dueStr = t.due?.date || t.due?.timestamp || t.due_at || "";
+            // due_at is a flat ISO string; also support nested due.date / due.timestamp
+            const dueStr = typeof t.due === "object" && t.due
+                ? (t.due.date || t.due.timestamp || "")
+                : (t.due_at || t.due || "");
             const isOverdue = dueStr ? new Date(dueStr) < now : false;
-            const isCompleted = t.is_completed || t.completed || t.status === "completed";
+            // +get-my-tasks returns incomplete tasks only; check completed/status for safety
+            const isCompleted = t.is_completed || t.completed || t.status === "completed" || false;
             let status;
             if (isCompleted)
                 status = "completed";
