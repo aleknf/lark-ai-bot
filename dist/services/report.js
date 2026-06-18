@@ -74,6 +74,7 @@ async function fetchCalendarEvents(start, end) {
             "calendar", "+agenda",
             "--start", start,
             "--end", end,
+            "--as", "user",
         ]);
         const events = result?.events || [];
         return events
@@ -105,7 +106,7 @@ async function fetchCalendarEvents(start, end) {
 }
 async function fetchTasks() {
     try {
-        const result = await (0, lark_cli_1.execLarkCLIJSON)(["task", "+get-my-tasks"]);
+        const result = await (0, lark_cli_1.execLarkCLIJSON)(["task", "+get-my-tasks", "--as", "user"]);
         const tasks = result?.tasks || [];
         const now = new Date();
         return tasks.map((t) => {

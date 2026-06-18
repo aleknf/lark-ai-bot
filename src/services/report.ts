@@ -136,6 +136,7 @@ async function fetchCalendarEvents(start: string, end: string): Promise<Calendar
       "calendar", "+agenda",
       "--start", start,
       "--end", end,
+      "--as", "user",
     ]);
 
     const events = result?.events || [];
@@ -177,7 +178,7 @@ async function fetchTasks(): Promise<TaskItem[]> {
         is_completed?: boolean;
         status?: string;
       }>;
-    }>(["task", "+get-my-tasks"]);
+    }>(["task", "+get-my-tasks", "--as", "user"]);
 
     const tasks = result?.tasks || [];
     const now = new Date();
