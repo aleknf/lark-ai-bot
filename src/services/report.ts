@@ -178,15 +178,23 @@ async function fetchTasks(): Promise<TaskItem[]> {
 
     // Task response: { ok, data: { items: [...] } }, not { tasks: [...] }
     const tasks = result?.data?.items || result?.tasks || result?.items || [];
-    logger.info({ taskCount: tasks.length }, "Tasks fetched");
+    if (tasks.length > 0) {
+      logger.info({ taskCount: tasks.length, sampleKeys: Object.keys(tasks[0]) }, "Tasks fetched");
+    } else {
+      logger.info("No tasks found in response");
+    }
 
     const now = new Date();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return tasks.map((t: any) => {
-      const dueStr = t.due?.date || t.due?.timestamp || t.due_at || "";
+      // due_at is a flat ISO string; also support nested due.date / due.timestamp
+      const dueStr = typeof t.due === "object" && t.due
+        ? (t.due.date || t.due.timestamp || "")
+        : (t.due_at || t.due || "");
       const isOverdue = dueStr ? new Date(dueStr) < now : false;
-      const isCompleted = t.is_completed || t.completed || t.status === "completed";
+      // +get-my-tasks returns incomplete tasks only; check completed/status for safety
+      const isCompleted = t.is_completed || t.completed || t.status === "completed" || false;
 
       let status: TaskItem["status"];
       if (isCompleted) status = "completed";
