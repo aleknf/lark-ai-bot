@@ -3,14 +3,31 @@
 // Lark CLI Wrapper — subprocess executor for all lark-cli operations
 // ============================================
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.PermissionDeniedError = void 0;
 exports.execLarkCLI = execLarkCLI;
 exports.execLarkCLIJSON = execLarkCLIJSON;
 exports.sendMessage = sendMessage;
+exports.initiateAuth = initiateAuth;
+exports.completeAuth = completeAuth;
 exports.fetchChatHistory = fetchChatHistory;
 const node_child_process_1 = require("node:child_process");
 const utils_1 = require("../utils");
 const utils_2 = require("../utils");
 const CLI_BIN = "lark-cli";
+/**
+ * Error thrown when a lark-cli command fails due to missing user permissions.
+ * Catchers can use this to trigger the auth flow.
+ */
+class PermissionDeniedError extends Error {
+    permission;
+    constructor(permission) {
+        const scopeList = permission.missingScopes.join(", ");
+        super(`Permission denied for ${permission.service} (${permission.identity}): missing scopes [${scopeList}]`);
+        this.name = "PermissionDeniedError";
+        this.permission = permission;
+    }
+}
+exports.PermissionDeniedError = PermissionDeniedError;
 /**
  * Execute a lark-cli command and return raw result.
  */
@@ -53,10 +70,41 @@ function execLarkCLI(args, options) {
 async function execLarkCLIJSON(args, options) {
     const result = await execLarkCLI(args, options);
     if (result.exitCode !== 0) {
+        // Parse structured error from stderr
+        const errJson = (0, utils_2.safeJsonParse)(result.stderr, {});
         // Check for confirmation_required
-        const error = (0, utils_2.safeJsonParse)(result.stderr, {});
-        if (error.error?.type === "confirmation_required") {
-            throw new Error(`High-risk operation requires confirmation: ${error.error.message}. Add --yes to confirm.`);
+        if (errJson.error?.type === "confirmation_required") {
+            throw new Error(`High-risk operation requires confirmation: ${errJson.error.message}. Add --yes to confirm.`);
+        }
+        // Check for permission_denied / access_denied
+        if (errJson.error?.type === "permission_denied" ||
+            errJson.error?.type === "access_denied") {
+            const identity = args.includes("--as") && args[args.indexOf("--as") + 1] === "bot"
+                ? "bot"
+                : "user";
+            const service = args[0] || "unknown";
+            throw new PermissionDeniedError({
+                type: "permission_denied",
+                service,
+                identity: identity,
+                missingScopes: errJson.error.permission_violations || [],
+                consoleUrl: undefined, // populated by caller if needed
+            });
+        }
+        // Generic permission check: look for "no permission" or "access denied" in message
+        const rawErr = (result.stderr || result.stdout).toLowerCase();
+        if (rawErr.includes("no permission") || rawErr.includes("access_denied")) {
+            const service = args[0] || "unknown";
+            const identity = args.includes("--as") && args[args.indexOf("--as") + 1] === "bot"
+                ? "bot"
+                : "user";
+            throw new PermissionDeniedError({
+                type: "permission_denied",
+                service,
+                identity: identity,
+                missingScopes: [],
+                consoleUrl: undefined,
+            });
         }
         throw new Error(`lark-cli exited with code ${result.exitCode}: ${result.stderr || result.stdout}`);
     }
@@ -89,6 +137,33 @@ async function sendMessage(chatId, text, options) {
     args.push("--as", identity, "--text", text);
     // Use JSON output to detect errors
     await execLarkCLIJSON(args);
+}
+/**
+ * Initiate user authorization for missing scopes.
+ * Returns a verification URL and device code — caller should present the URL
+ * to the user and then call completeAuth() after the user confirms.
+ */
+async function initiateAuth(scopes) {
+    const scopeArg = scopes.join(",");
+    const result = await execLarkCLIJSON([
+        "auth", "login",
+        "--scope", scopeArg,
+        "--no-wait",
+    ]);
+    return {
+        verificationUrl: result.verification_url,
+        deviceCode: result.device_code,
+        expiresIn: result.expires_in,
+    };
+}
+/**
+ * Complete authorization after user has authorized in browser.
+ */
+async function completeAuth(deviceCode) {
+    await execLarkCLIJSON([
+        "auth", "login",
+        "--device-code", deviceCode,
+    ]);
 }
 /**
  * Fetch recent chat messages for context.

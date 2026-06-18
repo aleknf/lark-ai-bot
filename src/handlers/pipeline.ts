@@ -10,6 +10,7 @@ import { baseService } from "../services/base";
 import { sheetsService } from "../services/sheets";
 import { docsService } from "../services/docs";
 import { generateWeeklyReport } from "../services/report";
+import { PermissionDeniedError, initiateAuth } from "../services/lark-cli";
 import type {
   ParsedMessage,
   BotCommand,
@@ -58,6 +59,40 @@ export async function executePipeline(message: ParsedMessage, command: BotComman
         return "";
     }
   } catch (error) {
+    // Handle permission denied — offer auth flow
+    if (error instanceof PermissionDeniedError) {
+      const { permission } = error;
+      logger.warn({ permission }, "Permission denied in pipeline");
+
+      // Only user identity can be re-authorized; bot requires admin console
+      if (permission.identity === "user" && permission.missingScopes.length > 0) {
+        try {
+          const auth = await initiateAuth(permission.missingScopes);
+          return [
+            `🔐 **Permission Required**`,
+            ``,
+            `The bot needs additional permissions to access your **${permission.service}** data.`,
+            ``,
+            `🔗 **Authorize here:** ${auth.verificationUrl}`,
+            ``,
+            `⏳ This link expires in ${Math.round(auth.expiresIn / 60)} minutes.`,
+            `After authorizing, reply **/done** and I'll complete the setup.`,
+          ].join("\n");
+        } catch (authError) {
+          logger.error({ err: authError }, "Failed to initiate auth");
+          return `🔐 **Permission Required** — The bot needs access to **${permission.service}**. Please run \`lark-cli auth login --scope "${permission.missingScopes.join(",")}"\` to grant permissions.`;
+        }
+      }
+
+      // Bot identity — direct to admin console
+      if (permission.identity === "bot") {
+        return `🔐 **Bot Permission Required** — The app needs additional scopes for **${permission.service}**. Please configure scopes in the Lark Developer Console.`;
+      }
+
+      // Fallback: no specific scopes known
+      return `🔐 **Permission Denied** — The bot lacks permissions for **${permission.service}**. Try running \`lark-cli auth login --domain ${permission.service}\` to re-authorize.`;
+    }
+
     logger.error({ err: error }, "Pipeline execution failed");
     return `❌ Sorry, something went wrong: ${error instanceof Error ? error.message : "Unknown error"}`;
   }

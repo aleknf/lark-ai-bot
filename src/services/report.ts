@@ -31,6 +31,11 @@ interface WeeklyReportData {
     totalMeetings: number;
     totalMinutes: number;
   };
+  thisWeek: {
+    events: CalendarEvent[];
+    totalMeetings: number;
+    totalMinutes: number;
+  };
   nextWeek: {
     events: CalendarEvent[];
     totalMeetings: number;
@@ -98,6 +103,25 @@ function getNextWeekRange(): DateRange {
   return {
     start: formatISO(nextMonday, "start"),
     end: formatISO(nextSunday, "end"),
+  };
+}
+
+function getThisWeekRange(): DateRange {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=Sun
+
+  // This Monday (or today if Monday)
+  const thisMonday = new Date(now);
+  const offset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  thisMonday.setDate(now.getDate() + offset);
+
+  // This Sunday
+  const thisSunday = new Date(thisMonday);
+  thisSunday.setDate(thisMonday.getDate() + 6);
+
+  return {
+    start: formatISO(thisMonday, "start"),
+    end: formatISO(thisSunday, "end"),
   };
 }
 
@@ -229,7 +253,7 @@ function buildReportXML(data: WeeklyReportData): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
-  const { lastWeek, nextWeek, tasks } = data;
+  const { lastWeek, thisWeek, nextWeek, tasks } = data;
   const completedCount = tasks.completed.length;
   const inFlightCount = tasks.inFlight.length;
   const overdueCount = tasks.overdue.length;
@@ -242,7 +266,7 @@ function buildReportXML(data: WeeklyReportData): string {
   // --- Header ---
   xml += `<heading level="1">📊 Weekly Activity Report</heading>\n`;
   xml += `<p><b>Generated:</b> ${dateStr}</p>\n`;
-  xml += `<p><b>Period:</b> Last Week (${formatDate(lastWeek.events[0]?.startTime || "")} – ${formatDate(lastWeek.events[lastWeek.events.length - 1]?.startTime || "")}) | Next Week Preview</p>\n`;
+  xml += `<p><b>Period:</b> Last Week | This Week | Next Week</p>\n`;
   xml += `<divider></divider>\n`;
 
   // --- Section: Last Week ---
@@ -254,6 +278,21 @@ function buildReportXML(data: WeeklyReportData): string {
     xml += `<table>\n`;
     xml += `<tr><th>Date</th><th>Event</th><th>Time</th><th>Duration</th></tr>\n`;
     for (const ev of lastWeek.events) {
+      xml += `<tr><td>${formatDate(ev.startTime)}</td><td>${escapeXml(ev.summary)}</td><td>${formatTime(ev.startTime)} – ${formatTime(ev.endTime)}</td><td>${formatDuration(ev.duration)}</td></tr>\n`;
+    }
+    xml += `</table>\n`;
+  }
+  xml += `<divider></divider>\n`;
+
+  // --- Section: This Week ---
+  xml += `<heading level="2">📌 This Week</heading>\n`;
+  if (thisWeek.events.length === 0) {
+    xml += `<p>No meetings or events recorded for this week.</p>\n`;
+  } else {
+    xml += `<p><b>Total:</b> ${thisWeek.totalMeetings} meetings (${formatDuration(thisWeek.totalMinutes)})</p>\n`;
+    xml += `<table>\n`;
+    xml += `<tr><th>Date</th><th>Event</th><th>Time</th><th>Duration</th></tr>\n`;
+    for (const ev of thisWeek.events) {
       xml += `<tr><td>${formatDate(ev.startTime)}</td><td>${escapeXml(ev.summary)}</td><td>${formatTime(ev.startTime)} – ${formatTime(ev.endTime)}</td><td>${formatDuration(ev.duration)}</td></tr>\n`;
     }
     xml += `</table>\n`;
@@ -331,6 +370,7 @@ function buildReportXML(data: WeeklyReportData): string {
   xml += `<divider></divider>\n`;
   xml += `<heading level="2">📝 Notes</heading>\n`;
   xml += `<p>• Tasks: ${completedCount} completed, ${inFlightCount} in progress, ${overdueCount} overdue</p>\n`;
+  xml += `<p>• This week: ${thisWeek.totalMeetings} meetings (${formatDuration(thisWeek.totalMinutes)})</p>\n`;
   xml += `<p>• Next week: ${nextWeek.totalMeetings} meetings scheduled</p>\n`;
   xml += `<p>• Generated automatically by Lark AI Bot</p>\n`;
 
@@ -353,8 +393,9 @@ export async function generateWeeklyReport(): Promise<string> {
   logger.info("Generating weekly activity report...");
 
   // Fetch data in parallel
-  const [lastWeekEvents, nextWeekEvents, tasks] = await Promise.all([
+  const [lastWeekEvents, thisWeekEvents, nextWeekEvents, tasks] = await Promise.all([
     fetchCalendarEvents(getLastWeekRange().start, getLastWeekRange().end),
+    fetchCalendarEvents(getThisWeekRange().start, getThisWeekRange().end),
     fetchCalendarEvents(getNextWeekRange().start, getNextWeekRange().end),
     fetchTasks(),
   ]);
@@ -364,6 +405,11 @@ export async function generateWeeklyReport(): Promise<string> {
       events: lastWeekEvents,
       totalMeetings: lastWeekEvents.length,
       totalMinutes: lastWeekEvents.reduce((sum, e) => sum + e.duration, 0),
+    },
+    thisWeek: {
+      events: thisWeekEvents,
+      totalMeetings: thisWeekEvents.length,
+      totalMinutes: thisWeekEvents.reduce((sum, e) => sum + e.duration, 0),
     },
     nextWeek: {
       events: nextWeekEvents,
@@ -392,6 +438,7 @@ export async function generateWeeklyReport(): Promise<string> {
       `📄 **Doc:** ${url}`,
       ``,
       `📅 **Last Week:** ${data.lastWeek.totalMeetings} meetings (${formatDuration(data.lastWeek.totalMinutes)})`,
+      `📌 **This Week:** ${data.thisWeek.totalMeetings} meetings (${formatDuration(data.thisWeek.totalMinutes)})`,
       `🔮 **Next Week:** ${data.nextWeek.totalMeetings} meetings`,
       `✅ **Tasks:** ${data.tasks.completed.length} completed, ${data.tasks.inFlight.length} in progress`,
       data.tasks.overdue.length > 0 ? `⚠️ **Overdue:** ${data.tasks.overdue.length} tasks` : "",
@@ -411,6 +458,12 @@ export async function generateWeeklyReport(): Promise<string> {
     ];
 
     for (const ev of data.lastWeek.events) {
+      lines.push(`  • ${formatDate(ev.startTime)}: ${ev.summary} (${formatDuration(ev.duration)})`);
+    }
+
+    lines.push("");
+    lines.push(`📌 **This Week:** ${data.thisWeek.totalMeetings} meetings`);
+    for (const ev of data.thisWeek.events) {
       lines.push(`  • ${formatDate(ev.startTime)}: ${ev.summary} (${formatDuration(ev.duration)})`);
     }
 

@@ -105,6 +105,18 @@ export interface CLIResult {
     stderr: string;
     exitCode: number;
 }
+export interface PermissionDenied {
+    type: "permission_denied";
+    service: string;
+    identity: "user" | "bot";
+    missingScopes: string[];
+    consoleUrl?: string;
+}
+export interface AuthInitiateResult {
+    verificationUrl: string;
+    deviceCode: string;
+    expiresIn: number;
+}
 export interface CLIExecOptions {
     timeout?: number;
     cwd?: string;
