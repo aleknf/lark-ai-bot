@@ -151,8 +151,15 @@ async function fetchCalendarEvents(start: string, end: string): Promise<Calendar
       })
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((e: any) => {
-        const startTime = e.start_time || e.start?.dateTime || e.start?.date || "";
-        const endTime = e.end_time || e.end?.dateTime || e.end?.date || "";
+        // start_time / end_time are objects {datetime, timezone} from the API
+        const rawStart = e.start_time || e.start?.dateTime || e.start?.date || "";
+        const rawEnd = e.end_time || e.end?.dateTime || e.end?.date || "";
+        const startTime = typeof rawStart === "object" && rawStart !== null
+          ? (rawStart.datetime || rawStart.date || "")
+          : String(rawStart);
+        const endTime = typeof rawEnd === "object" && rawEnd !== null
+          ? (rawEnd.datetime || rawEnd.date || "")
+          : String(rawEnd);
         const duration = startTime && endTime
           ? Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000)
           : 0;
@@ -161,7 +168,7 @@ async function fetchCalendarEvents(start: string, end: string): Promise<Calendar
           summary: e.summary || "Untitled",
           startTime,
           endTime,
-          status: e.status || "unknown",
+          status: e.status || e.free_busy_status || "unknown",
           duration,
         };
       });
