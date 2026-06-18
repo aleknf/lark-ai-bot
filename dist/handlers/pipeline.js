@@ -44,6 +44,7 @@ const im_1 = require("../services/im");
 const base_1 = require("../services/base");
 const sheets_1 = require("../services/sheets");
 const docs_1 = require("../services/docs");
+const report_1 = require("../services/report");
 /**
  * Execute the full AI pipeline for an incoming message.
  */
@@ -67,6 +68,8 @@ async function executePipeline(message, command) {
                 return await handleSheetQuery(command);
             case "report":
                 return await handleReport(command, context, config);
+            case "weekly":
+                return await handleWeeklyReport();
             case "ai":
                 return await handleAI(command, context, config);
             case "unknown":
@@ -104,7 +107,8 @@ function getHelpResponse() {
         "• `/help` — Show this help",
         "• `/search <query>` — Search Lark Base records",
         "• `/sheet <query>` — Query Lark Sheets data",
-        "• `/report [topic]` — Generate a Docs report",
+        "• `/report [topic]` — Generate an AI Docs report",
+        "• `/weekly` — Generate a weekly activity report (calendar + tasks)",
         "• `/ai <prompt>` — Ask the AI assistant",
         "",
         "Just mention me with any question too!",
@@ -235,6 +239,15 @@ async function handleReport(command, context, config) {
     }
     catch (error) {
         return `❌ Report generation failed: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+}
+async function handleWeeklyReport() {
+    try {
+        return await (0, report_1.generateWeeklyReport)();
+    }
+    catch (error) {
+        utils_1.logger.error({ err: error }, "Weekly report generation failed");
+        return `❌ Weekly report generation failed: ${error instanceof Error ? error.message : "Unknown error"}`;
     }
 }
 async function handleAI(command, context, config) {

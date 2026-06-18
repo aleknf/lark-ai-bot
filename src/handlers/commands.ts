@@ -8,6 +8,7 @@ const COMMANDS = {
   help: /^\/help$/i,
   search: /^\/search\s+(.+)/i,
   report: /^\/report(?:\s+(.+))?$/i,
+  weekly: /^\/weekly$/i,
   sheet: /^\/sheet\s+(.+)/i,
   ai: /^\/ai\s+(.+)/i,
 } as const;
@@ -35,6 +36,8 @@ export function parseCommand(
           return { type: "search", query: match[1].trim() };
         case "report":
           return { type: "report", topic: match[1]?.trim() };
+        case "weekly":
+          return { type: "weekly" };
         case "sheet":
           return { type: "sheet", query: match[1].trim() };
         case "ai":
@@ -61,7 +64,8 @@ export function getHelpText(): string {
     "• `/help` — Show this help message",
     "• `/search <query>` — Search records in Lark Base",
     "• `/sheet <query>` — Query data from Lark Sheets",
-    "• `/report [topic]` — Generate a report in Lark Docs",
+    "• `/report [topic]` — Generate an AI report in Lark Docs",
+    "• `/weekly` — Generate a weekly activity report (calendar + tasks)",
     "• `/ai <prompt>` — Ask anything to the AI assistant",
     "",
     "You can also just mention me with any question!",

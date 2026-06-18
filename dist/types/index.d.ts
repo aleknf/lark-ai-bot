@@ -119,6 +119,8 @@ export type BotCommand = {
     type: "report";
     topic?: string;
 } | {
+    type: "weekly";
+} | {
     type: "sheet";
     query: string;
 } | {

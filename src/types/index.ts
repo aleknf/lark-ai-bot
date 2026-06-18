@@ -144,6 +144,7 @@ export type BotCommand =
   | { type: "help" }
   | { type: "search"; query: string }
   | { type: "report"; topic?: string }
+  | { type: "weekly" }
   | { type: "sheet"; query: string }
   | { type: "ai"; prompt: string }
   | { type: "unknown"; raw: string };

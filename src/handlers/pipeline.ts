@@ -9,6 +9,7 @@ import { imService } from "../services/im";
 import { baseService } from "../services/base";
 import { sheetsService } from "../services/sheets";
 import { docsService } from "../services/docs";
+import { generateWeeklyReport } from "../services/report";
 import type {
   ParsedMessage,
   BotCommand,
@@ -46,6 +47,9 @@ export async function executePipeline(message: ParsedMessage, command: BotComman
 
       case "report":
         return await handleReport(command, context, config);
+
+      case "weekly":
+        return await handleWeeklyReport();
 
       case "ai":
         return await handleAI(command, context, config);
@@ -88,7 +92,8 @@ function getHelpResponse(): string {
     "• `/help` — Show this help",
     "• `/search <query>` — Search Lark Base records",
     "• `/sheet <query>` — Query Lark Sheets data",
-    "• `/report [topic]` — Generate a Docs report",
+    "• `/report [topic]` — Generate an AI Docs report",
+    "• `/weekly` — Generate a weekly activity report (calendar + tasks)",
     "• `/ai <prompt>` — Ask the AI assistant",
     "",
     "Just mention me with any question too!",
@@ -250,6 +255,15 @@ async function handleReport(
     }
   } catch (error) {
     return `❌ Report generation failed: ${error instanceof Error ? error.message : "Unknown error"}`;
+  }
+}
+
+async function handleWeeklyReport(): Promise<string> {
+  try {
+    return await generateWeeklyReport();
+  } catch (error) {
+    logger.error({ err: error }, "Weekly report generation failed");
+    return `❌ Weekly report generation failed: ${error instanceof Error ? error.message : "Unknown error"}`;
   }
 }
 
