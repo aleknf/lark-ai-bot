@@ -12,7 +12,6 @@ exports.docsService = {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await (0, lark_cli_1.execLarkCLIJSON)([
             "docs", "+create",
-            "--title", title,
             "--content", content,
             "--as", "user",
         ]);

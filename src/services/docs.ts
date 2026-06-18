@@ -19,7 +19,6 @@ export const docsService: DocsService = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await execLarkCLIJSON<any>([
       "docs", "+create",
-      "--title", title,
       "--content", content,
       "--as", "user",
     ]);
