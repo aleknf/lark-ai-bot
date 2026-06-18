@@ -133,12 +133,9 @@ async function fetchCalendarEvents(start: string, end: string): Promise<Calendar
       "--as", "user",
     ]);
 
-    const events = result?.events || result?.items || result?.data?.events || [];
-    logger.info({ eventCount: events.length, resultKeys: Object.keys(result || {}) }, "Calendar events fetched");
-
-    if (events.length === 0) {
-      logger.warn({ rawResult: JSON.stringify(result).slice(0, 300) }, "Empty calendar result — raw data");
-    }
+    // Calendar response: { ok, data: [...] }, not { events: [...] }
+    const events = Array.isArray(result?.data) ? result.data : (result?.events || []);
+    logger.info({ eventCount: events.length }, "Calendar events fetched");
 
     return (events as Array<{
       summary?: string;
@@ -152,9 +149,10 @@ async function fetchCalendarEvents(start: string, end: string): Promise<Calendar
         const skip = ["clock out", "clock in", "break", "lunch"];
         return !skip.some((s) => summary.includes(s));
       })
-      .map((e) => {
-        const startTime = e.start?.dateTime || e.start?.date || "";
-        const endTime = e.end?.dateTime || e.end?.date || "";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((e: any) => {
+        const startTime = e.start_time || e.start?.dateTime || e.start?.date || "";
+        const endTime = e.end_time || e.end?.dateTime || e.end?.date || "";
         const duration = startTime && endTime
           ? Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000)
           : 0;
@@ -178,20 +176,17 @@ async function fetchTasks(): Promise<TaskItem[]> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result: any = await execLarkCLIJSON(["task", "+get-my-tasks", "--as", "user"]);
 
-    const tasks = result?.tasks || result?.items || result?.data?.tasks || [];
-    logger.info({ taskCount: tasks.length, resultKeys: Object.keys(result || {}) }, "Tasks fetched");
-
-    if (tasks.length === 0) {
-      logger.warn({ rawResult: JSON.stringify(result).slice(0, 300) }, "Empty task result — raw data");
-    }
+    // Task response: { ok, data: { items: [...] } }, not { tasks: [...] }
+    const tasks = result?.data?.items || result?.tasks || result?.items || [];
+    logger.info({ taskCount: tasks.length }, "Tasks fetched");
 
     const now = new Date();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return tasks.map((t: any) => {
-      const dueStr = t.due?.date || t.due?.timestamp || "";
+      const dueStr = t.due?.date || t.due?.timestamp || t.due_at || "";
       const isOverdue = dueStr ? new Date(dueStr) < now : false;
-      const isCompleted = t.is_completed || t.status === "completed";
+      const isCompleted = t.is_completed || t.completed || t.status === "completed";
 
       let status: TaskItem["status"];
       if (isCompleted) status = "completed";
