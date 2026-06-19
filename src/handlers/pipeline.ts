@@ -114,7 +114,9 @@ async function gatherChatHistory(chatId: string): Promise<OpenRouterMessage[]> {
       }))
       .reverse(); // Chronological order
   } catch (error) {
-    logger.warn({ err: error }, "Failed to gather chat history");
+    logger.warn({ err: error, chatId }, "Failed to gather chat history, continuing without history");
+    // Don't fail the entire pipeline if we can't get history
+    // The bot can still respond without context
     return [];
   }
 }

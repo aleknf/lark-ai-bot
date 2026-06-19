@@ -128,7 +128,9 @@ async function gatherChatHistory(chatId) {
             .reverse(); // Chronological order
     }
     catch (error) {
-        utils_1.logger.warn({ err: error }, "Failed to gather chat history");
+        utils_1.logger.warn({ err: error, chatId }, "Failed to gather chat history, continuing without history");
+        // Don't fail the entire pipeline if we can't get history
+        // The bot can still respond without context
         return [];
     }
 }

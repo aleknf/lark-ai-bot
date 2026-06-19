@@ -28,14 +28,21 @@ exports.imService = {
         ]);
     },
     async getChatHistory(chatId, limit = 20) {
-        const raw = await (0, lark_cli_1.fetchChatHistory)(chatId, limit);
-        return raw.map((m) => ({
-            messageId: m.messageId,
-            senderId: m.senderId,
-            text: m.text,
-            timestamp: m.timestamp,
-            isBot: m.senderId.includes(BOT_APP_ID) || m.senderId.startsWith("cli_"),
-        }));
+        try {
+            const raw = await (0, lark_cli_1.fetchChatHistory)(chatId, limit);
+            return raw.map((m) => ({
+                messageId: m.messageId,
+                senderId: m.senderId,
+                text: m.text,
+                timestamp: m.timestamp,
+                isBot: m.senderId.includes(BOT_APP_ID) || m.senderId.startsWith("cli_"),
+            }));
+        }
+        catch (error) {
+            // If authorization fails, return empty history instead of crashing
+            utils_1.logger.warn({ err: error, chatId }, "Could not fetch chat history (authorization issue?)");
+            return [];
+        }
     },
     async sendCard(chatId, cardJson) {
         const card = {
