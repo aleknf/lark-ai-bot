@@ -175,9 +175,9 @@ async function handleCalendarQuery(query) {
         ]);
         const events = result?.data || result?.events || [];
         if (events.length === 0) {
-            return `📅 **${label}'s Calendar:** No events scheduled.`;
+            return `📅 ${label}'s Calendar: No events scheduled.`;
         }
-        const lines = [`📅 **${label}'s Calendar:**`, ""];
+        const lines = [`📅 ${label}'s Calendar:`, ""];
         for (const ev of events) {
             const summary = ev.summary || "Untitled";
             const startObj = ev.start_time || ev.start;
@@ -187,7 +187,7 @@ async function handleCalendarQuery(query) {
                 ? s.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
                 : "?";
             const timeStr = s ? s.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) : "?";
-            lines.push(`  • **${dateStr}** at ${timeStr} — ${summary}`);
+            lines.push(`  • ${dateStr} at ${timeStr} — ${summary}`);
         }
         return lines.join("\n");
     }
@@ -201,9 +201,9 @@ async function handleTaskQuery() {
         const result = await (0, lark_cli_1.execLarkCommand)("task", ["+get-my-tasks", "--as", "user"]);
         const tasks = result?.data?.items || result?.items || [];
         if (tasks.length === 0) {
-            return "✅ **Your Tasks:** All clear! No pending tasks.";
+            return "✅ Your Tasks: All clear! No pending tasks.";
         }
-        const lines = ["✅ **Your Tasks:**", ""];
+        const lines = ["✅ Your Tasks:", ""];
         const now = new Date();
         for (const t of tasks) {
             const name = t.summary || t.title || "Untitled Task";
@@ -235,7 +235,7 @@ async function handleContactSearch(query) {
             const name = user.localized_name || user.name || user.display_name || "Unknown";
             const email = user.email || user.enterprise_email || "";
             const dept = user.department_name || user.department || "";
-            lines.push(`  • **${name}**${email ? ` (${email})` : ""}${dept ? ` — ${dept}` : ""}`);
+            lines.push(`  • ${name}${email ? ` (${email})` : ""}${dept ? ` — ${dept}` : ""}`);
         }
         if (users.length > 10) {
             lines.push(`  ...and ${users.length - 10} more users.`);

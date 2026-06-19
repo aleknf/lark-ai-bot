@@ -40,17 +40,17 @@ export async function executePipeline(message: ParsedMessage, command: BotComman
         // For bot identity, need admin console configuration
         if (permission.identity === "bot") {
           return [
-            "🔐 **Bot Configuration Required**",
+            "🔐 Bot Configuration Required",
             "",
-            `I need additional permissions to access chat history.`,
+            "I need additional permissions to access chat history.",
             "",
-            "**Required scope:** `im:chat:readonly`",
+            "Required scope: im:chat:readonly",
             "",
             "Please ask your Lark workspace admin to:",
-            "1. Go to [Lark Developer Console](https://open.feishu.cn/)",
+            "1. Go to Lark Developer Console (https://open.feishu.cn/)",
             "2. Select this bot app",
-            "3. Navigate to **Permissions & Scopes**",
-            "4. Enable the `im:chat:readonly` scope",
+            "3. Navigate to Permissions & Scopes",
+            "4. Enable the im:chat:readonly scope",
             "5. Re-publish the app",
             "",
             "I can still answer your question, but without conversation context.",
@@ -62,31 +62,30 @@ export async function executePipeline(message: ParsedMessage, command: BotComman
           try {
             const auth = await initiateAuth(permission.missingScopes);
             return [
-              "🔐 **Authorization Required**",
+              "🔐 Authorization Required",
               "",
-              `To provide better answers with conversation context, I need your permission to read chat history.`,
+              "To provide better answers with conversation context, I need your permission to read chat history.",
               "",
-              "**Required scopes:** `" + permission.missingScopes.join(", ") + "`",
+              "Required scopes: " + permission.missingScopes.join(", "),
               "",
-              `🔗 **Click here to authorize:** ${auth.verificationUrl}`,
+              "🔗 Click here to authorize:",
+              auth.verificationUrl,
               "",
-              `⏳ This link expires in ${Math.round(auth.expiresIn / 60)} minutes.`,
+              "⏳ This link expires in " + Math.round(auth.expiresIn / 60) + " minutes.",
               "",
               "After authorizing, just mention me again and I'll have full context!",
               "",
-              "_For now, I can still help but won't have access to previous messages._",
+              "For now, I can still help but won't have access to previous messages.",
             ].join("\n");
           } catch (authError) {
             logger.error({ err: authError }, "Failed to initiate auth flow");
             return [
-              "🔐 **Authorization Required**",
+              "🔐 Authorization Required",
               "",
               "I need permission to read chat history for better context.",
               "",
               "Please run this command:",
-              "```",
-              `lark-cli auth login --scope "${permission.missingScopes.join(",")}"`,
-              "```",
+              "lark-cli auth login --scope \"" + permission.missingScopes.join(",") + "\"",
               "",
               "I can still help, but without conversation context.",
             ].join("\n");
@@ -200,29 +199,29 @@ async function gatherChatHistory(chatId: string): Promise<OpenRouterMessage[]> {
 
 function getHelpResponse(): string {
   return [
-    "🤖 **Lark AI Bot — Available Features**",
+    "🤖 Lark AI Bot — Available Features",
     "",
-    "**📋 Structured Commands:**",
-    "• `/help` — Show this help",
-    "• `/search <query>` — Search Lark Base records",
-    "• `/sheet <query>` — Query Lark Sheets data",
-    "• `/report [topic]` — Generate an AI Docs report",
-    "• `/weekly` — Generate a weekly activity report (calendar + tasks)",
-    "• `/ai <prompt>` — Ask the AI assistant",
+    "📋 Structured Commands:",
+    "• /help — Show this help",
+    "• /search <query> — Search Lark Base records",
+    "• /sheet <query> — Query Lark Sheets data",
+    "• /report [topic] — Generate an AI Docs report",
+    "• /weekly — Generate a weekly activity report (calendar + tasks)",
+    "• /ai <prompt> — Ask the AI assistant",
     "",
-    "**🎯 Natural Language — Just ask me about:**",
-    "• 📅 **Calendar** — \"What's on my agenda today?\", \"Show my meetings this week\"",
-    "• ✅ **Tasks** — \"List my tasks\", \"What's due soon?\"",
-    "• 👥 **Contacts** — \"Find user John Smith\", \"Search for Alice\"",
-    "• 📧 **Email** — \"Check my recent emails\", \"Send email to...\"",
-    "• 📁 **Drive** — \"Search files\", \"Upload document\"",
-    "• ✔️ **Approvals** — \"Show pending approvals\", \"List my approval requests\"",
-    "• 🎯 **OKRs** — \"Show my OKRs\", \"List team objectives\"",
-    "• 📝 **Minutes** — \"Get meeting minutes\", \"Show recent meeting notes\"",
-    "• 🎥 **Video Conference** — \"List recent meetings\", \"Get meeting recordings\"",
-    "• 📊 **Whiteboard** — \"Create a new board\", \"Show whiteboard content\"",
-    "• 📚 **Wiki** — \"Search wiki\", \"Create wiki page\"",
-    "• ⏰ **Attendance** — \"Check my attendance\", \"Show attendance records\"",
+    "🎯 Natural Language — Just ask me about:",
+    "• 📅 Calendar — \"What's on my agenda today?\", \"Show my meetings this week\"",
+    "• ✅ Tasks — \"List my tasks\", \"What's due soon?\"",
+    "• 👥 Contacts — \"Find user John Smith\", \"Search for Alice\"",
+    "• 📧 Email — \"Check my recent emails\", \"Send email to...\"",
+    "• 📁 Drive — \"Search files\", \"Upload document\"",
+    "• ✔️ Approvals — \"Show pending approvals\", \"List my approval requests\"",
+    "• 🎯 OKRs — \"Show my OKRs\", \"List team objectives\"",
+    "• 📝 Minutes — \"Get meeting minutes\", \"Show recent meeting notes\"",
+    "• 🎥 Video Conference — \"List recent meetings\", \"Get meeting recordings\"",
+    "• 📊 Whiteboard — \"Create a new board\", \"Show whiteboard content\"",
+    "• 📚 Wiki — \"Search wiki\", \"Create wiki page\"",
+    "• ⏰ Attendance — \"Check my attendance\", \"Show attendance records\"",
     "",
     "Just mention me and ask naturally — I'll understand! 💬",
   ].join("\n");
@@ -277,7 +276,7 @@ function formatSearchResults(records: { record_id: string; fields: Record<string
     const fields = Object.entries(record.fields)
       .map(([k, v]) => `  ${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
       .join("\n");
-    lines.push(`📋 Record \`${record.record_id}\`:\n${fields}`, "");
+    lines.push(`📋 Record ${record.record_id}:\n${fields}`, "");
   }
 
   if (records.length > 10) {
@@ -314,10 +313,10 @@ async function handleSheetQuery(command: BotCommand & { type: "sheet" }): Promis
 
 function formatSheetData(values: unknown[][], range: string): string {
   if (!values || values.length === 0) {
-    return `📊 Range \`${range}\` is empty.`;
+    return `📊 Range ${range} is empty.`;
   }
 
-  const lines = [`📊 Sheet data (\`${range}\`):`, ""];
+  const lines = [`📊 Sheet data (${range}):`, ""];
   const maxRows = Math.min(values.length, 20);
   for (let i = 0; i < maxRows; i++) {
     const row = values[i] || [];
@@ -469,7 +468,36 @@ async function handleAI(
 
   const messages = buildMessages(systemPrompt, context.chatHistory, prompt);
   const result = await chatCompletion(messages, { temperature: 0.7, maxTokens: 2000 });
-  return result.content;
+  
+  // Clean up Markdown formatting for better Lark display
+  return cleanMarkdownForLark(result.content);
+}
+
+/**
+ * Clean Markdown formatting for better display in Lark messages.
+ * Lark doesn't render Markdown well in regular text messages.
+ */
+function cleanMarkdownForLark(text: string): string {
+  return text
+    // Remove bold markers
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    // Remove italic markers
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    // Remove code block markers but keep content
+    .replace(/```[a-z]*\n([\s\S]*?)```/g, "$1")
+    // Remove inline code markers
+    .replace(/`([^`]+)`/g, "$1")
+    // Remove header markers but keep text
+    .replace(/^#{1,6}\s+(.+)$/gm, "$1")
+    // Remove horizontal rules
+    .replace(/^---+$/gm, "")
+    .replace(/^===+$/gm, "")
+    // Remove link markdown but keep text and URL
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
+    // Clean up multiple newlines
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /**

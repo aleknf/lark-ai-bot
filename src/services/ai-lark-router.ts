@@ -202,10 +202,10 @@ async function handleCalendarQuery(query: string): Promise<string> {
 
     const events = (result as any)?.data || (result as any)?.events || [];
     if (events.length === 0) {
-      return `📅 **${label}'s Calendar:** No events scheduled.`;
+      return `📅 ${label}'s Calendar: No events scheduled.`;
     }
 
-    const lines = [`📅 **${label}'s Calendar:**`, ""];
+    const lines = [`📅 ${label}'s Calendar:`, ""];
     for (const ev of events) {
       const summary = ev.summary || "Untitled";
       const startObj = ev.start_time || ev.start;
@@ -215,7 +215,7 @@ async function handleCalendarQuery(query: string): Promise<string> {
         ? s.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
         : "?";
       const timeStr = s ? s.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) : "?";
-      lines.push(`  • **${dateStr}** at ${timeStr} — ${summary}`);
+      lines.push(`  • ${dateStr} at ${timeStr} — ${summary}`);
     }
 
     return lines.join("\n");
@@ -231,10 +231,10 @@ async function handleTaskQuery(): Promise<string> {
     const tasks = (result as any)?.data?.items || (result as any)?.items || [];
 
     if (tasks.length === 0) {
-      return "✅ **Your Tasks:** All clear! No pending tasks.";
+      return "✅ Your Tasks: All clear! No pending tasks.";
     }
 
-    const lines = ["✅ **Your Tasks:**", ""];
+    const lines = ["✅ Your Tasks:", ""];
     const now = new Date();
 
     for (const t of tasks) {
@@ -270,7 +270,7 @@ async function handleContactSearch(query: string): Promise<string> {
       const name = user.localized_name || user.name || user.display_name || "Unknown";
       const email = user.email || user.enterprise_email || "";
       const dept = user.department_name || user.department || "";
-      lines.push(`  • **${name}**${email ? ` (${email})` : ""}${dept ? ` — ${dept}` : ""}`);
+      lines.push(`  • ${name}${email ? ` (${email})` : ""}${dept ? ` — ${dept}` : ""}`);
     }
 
     if (users.length > 10) {
