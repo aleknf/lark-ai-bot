@@ -1,5 +1,7 @@
 // ============================================
 // Lark CLI Wrapper — subprocess executor for all lark-cli operations
+// Supports all lark-cli domains: im, base, sheets, docs, calendar, contact,
+// drive, task, approval, attendance, okr, mail, markdown, minutes, vc, whiteboard, wiki, event
 // ============================================
 
 import { execFile, type ExecFileOptions } from "node:child_process";
@@ -8,6 +10,15 @@ import { safeJsonParse } from "../utils";
 import type { CLIResult, PermissionDenied, AuthInitiateResult } from "../types";
 
 const CLI_BIN = "lark-cli";
+
+// Available lark-cli domains
+export const LARK_DOMAINS = [
+  "im", "base", "sheets", "docs", "calendar", "contact",
+  "drive", "task", "approval", "attendance", "okr",
+  "mail", "markdown", "minutes", "vc", "whiteboard", "wiki", "event"
+] as const;
+
+export type LarkDomain = typeof LARK_DOMAINS[number];
 
 /**
  * Error thrown when a lark-cli command fails due to missing user permissions.
@@ -153,8 +164,37 @@ export async function execLarkCLIJSON<T>(
   return parsed;
 }
 
+/**
+ * Generic lark-cli command executor.
+ * This allows the AI to execute any lark-cli command dynamically.
+ * 
+ * @example
+ * // Calendar
+ * await execLarkCommand("calendar", ["+agenda", "--start", "2024-01-01T00:00:00+08:00", "--end", "2024-01-07T23:59:59+08:00"])
+ * 
+ * // Tasks
+ * await execLarkCommand("task", ["+get-my-tasks", "--as", "user"])
+ * 
+ * // Contact search
+ * await execLarkCommand("contact", ["+search-user", "--query", "John"])
+ */
+export async function execLarkCommand(
+  domain: string,
+  args: string[],
+  options?: { timeout?: number; as?: "bot" | "user" }
+): Promise<unknown> {
+  const fullArgs = [domain, ...args];
+  
+  // Add identity flag if specified
+  if (options?.as && !args.includes("--as")) {
+    fullArgs.push("--as", options.as);
+  }
+
+  return await execLarkCLIJSON(fullArgs, options);
+}
+
 // ============================================
-// High-level CLI operations
+// High-level CLI operations (backward compatibility)
 // ============================================
 
 /**

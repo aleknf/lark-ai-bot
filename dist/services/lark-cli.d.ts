@@ -1,4 +1,6 @@
 import type { CLIResult, PermissionDenied, AuthInitiateResult } from "../types";
+export declare const LARK_DOMAINS: readonly ["im", "base", "sheets", "docs", "calendar", "contact", "drive", "task", "approval", "attendance", "okr", "mail", "markdown", "minutes", "vc", "whiteboard", "wiki", "event"];
+export type LarkDomain = typeof LARK_DOMAINS[number];
 /**
  * Error thrown when a lark-cli command fails due to missing user permissions.
  * Catchers can use this to trigger the auth flow.
@@ -19,6 +21,24 @@ export declare function execLarkCLI(args: string[], options?: {
 export declare function execLarkCLIJSON<T>(args: string[], options?: {
     timeout?: number;
 }): Promise<T>;
+/**
+ * Generic lark-cli command executor.
+ * This allows the AI to execute any lark-cli command dynamically.
+ *
+ * @example
+ * // Calendar
+ * await execLarkCommand("calendar", ["+agenda", "--start", "2024-01-01T00:00:00+08:00", "--end", "2024-01-07T23:59:59+08:00"])
+ *
+ * // Tasks
+ * await execLarkCommand("task", ["+get-my-tasks", "--as", "user"])
+ *
+ * // Contact search
+ * await execLarkCommand("contact", ["+search-user", "--query", "John"])
+ */
+export declare function execLarkCommand(domain: string, args: string[], options?: {
+    timeout?: number;
+    as?: "bot" | "user";
+}): Promise<unknown>;
 /**
  * Send a text message to a chat.
  */

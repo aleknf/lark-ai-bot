@@ -46,6 +46,7 @@ const sheets_1 = require("../services/sheets");
 const docs_1 = require("../services/docs");
 const report_1 = require("../services/report");
 const lark_cli_1 = require("../services/lark-cli");
+const ai_lark_router_1 = require("../services/ai-lark-router");
 /**
  * Execute the full AI pipeline for an incoming message.
  */
@@ -134,8 +135,9 @@ async function gatherChatHistory(chatId) {
 // --- Command Handlers ---
 function getHelpResponse() {
     return [
-        "🤖 **Lark AI Bot — Commands**",
+        "🤖 **Lark AI Bot — Available Features**",
         "",
+        "**📋 Structured Commands:**",
         "• `/help` — Show this help",
         "• `/search <query>` — Search Lark Base records",
         "• `/sheet <query>` — Query Lark Sheets data",
@@ -143,7 +145,21 @@ function getHelpResponse() {
         "• `/weekly` — Generate a weekly activity report (calendar + tasks)",
         "• `/ai <prompt>` — Ask the AI assistant",
         "",
-        "Just mention me with any question too!",
+        "**🎯 Natural Language — Just ask me about:**",
+        "• 📅 **Calendar** — \"What's on my agenda today?\", \"Show my meetings this week\"",
+        "• ✅ **Tasks** — \"List my tasks\", \"What's due soon?\"",
+        "• 👥 **Contacts** — \"Find user John Smith\", \"Search for Alice\"",
+        "• 📧 **Email** — \"Check my recent emails\", \"Send email to...\"",
+        "• 📁 **Drive** — \"Search files\", \"Upload document\"",
+        "• ✔️ **Approvals** — \"Show pending approvals\", \"List my approval requests\"",
+        "• 🎯 **OKRs** — \"Show my OKRs\", \"List team objectives\"",
+        "• 📝 **Minutes** — \"Get meeting minutes\", \"Show recent meeting notes\"",
+        "• 🎥 **Video Conference** — \"List recent meetings\", \"Get meeting recordings\"",
+        "• 📊 **Whiteboard** — \"Create a new board\", \"Show whiteboard content\"",
+        "• 📚 **Wiki** — \"Search wiki\", \"Create wiki page\"",
+        "• ⏰ **Attendance** — \"Check my attendance\", \"Show attendance records\"",
+        "",
+        "Just mention me and ask naturally — I'll understand! 💬",
     ].join("\n");
 }
 async function handleSearch(command, context) {
@@ -283,20 +299,40 @@ async function handleWeeklyReport() {
     }
 }
 async function handleAI(command, context, config) {
+    const prompt = command.prompt;
+    // First, try optimized common query handlers
+    try {
+        const commonResult = await (0, ai_lark_router_1.handleCommonQuery)(prompt);
+        if (commonResult) {
+            return commonResult;
+        }
+    }
+    catch (error) {
+        utils_1.logger.warn({ err: error }, "Common query handler failed, falling back to full AI routing");
+    }
+    // Try AI-powered Lark CLI routing
+    try {
+        const routeResult = await (0, ai_lark_router_1.routeToLarkCLI)(prompt, context.chatHistory);
+        if (routeResult.success) {
+            return routeResult.response;
+        }
+        // If routing determined this is not a Lark request, fall through to general AI
+    }
+    catch (error) {
+        utils_1.logger.warn({ err: error }, "Lark CLI routing failed, falling back to general AI");
+    }
+    // Fallback to general AI chat (for non-Lark questions)
     // Detect if user is asking about their activities, schedule, calendar, or tasks
-    const prompt = command.prompt.toLowerCase();
+    const lowerPrompt = prompt.toLowerCase();
     const isActivityQuery = /aktivitas|activity|schedule|jadwal|kalender|calendar|task|tugas|meeting|rapat|minggu ini|hari ini|this week|today|besok|tomorrow|agenda/i.test(prompt);
-    // Detect chat summarization requests: "rangkum chat dari X", "summarize chat from X", etc.
-    // Match pattern: rangkum/ringkas/summarize + chat/pesan + dari/dengan/from/with + PersonName [+ time]
-    const chatSummaryMatch = command.prompt.match(/(?:rangkum|ringkas|summarize|ringkasan|summary|kesimpulan)\s+(?:chat|pesan|message|obrolan|percakapan|dm)\s+(?:dari|dengan|from|with)\s+(.+)/i);
-    // Also match quoted patterns like "rangkum chat 'Lia Pitaloka' seminggu ini"
-    const chatSummaryMatch2 = command.prompt.match(/(?:rangkum|ringkas|summarize|ringkasan|summary)\s+(?:chat|pesan|message|obrolan)\s+['"](.+?)['"]/i);
+    // Detect chat summarization requests
+    const chatSummaryMatch = prompt.match(/(?:rangkum|ringkas|summarize|ringkasan|summary|kesimpulan)\s+(?:chat|pesan|message|obrolan|percakapan|dm)\s+(?:dari|dengan|from|with)\s+(.+)/i);
+    const chatSummaryMatch2 = prompt.match(/(?:rangkum|ringkas|summarize|ringkasan|summary)\s+(?:chat|pesan|message|obrolan)\s+['"](.+?)['"]/i);
     let chatPerson = chatSummaryMatch?.[1]?.trim() || chatSummaryMatch2?.[1]?.trim();
-    // Post-process: strip trailing time phrases first, then surrounding quotes
     if (chatPerson) {
         chatPerson = chatPerson
             .replace(/\s+(?:seminggu|sepekan|minggu\s+ini|minggu\s+lalu|minggu\s+depan|hari\s+ini|hari\s+kemarin|besok|kemarin|bulan\s+ini|bulan\s+lalu|this\s+week|last\s+week|next\s+week|today|yesterday|tomorrow|this\s+month|last\s+month)(?:\s+(?:ini|terakhir|lalu))?\s*$/i, "")
-            .replace(/^['"]|['"]$/g, "") // strip surrounding quotes (after time is removed)
+            .replace(/^['"]|['"]$/g, "")
             .trim();
     }
     let dataContext = "";
@@ -320,7 +356,7 @@ async function handleAI(command, context, config) {
     const systemPrompt = dataContext
         ? `${config.AI_SYSTEM_PROMPT}\n\n--- USER DATA CONTEXT ---\n${dataContext}\n---\nUse the data above to answer the user's question accurately. Always include specific dates, times, and event/task names from the data.`
         : config.AI_SYSTEM_PROMPT;
-    const messages = (0, openrouter_1.buildMessages)(systemPrompt, context.chatHistory, command.prompt);
+    const messages = (0, openrouter_1.buildMessages)(systemPrompt, context.chatHistory, prompt);
     const result = await (0, openrouter_1.chatCompletion)(messages, { temperature: 0.7, maxTokens: 2000 });
     return result.content;
 }
