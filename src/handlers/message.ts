@@ -6,7 +6,7 @@ import { logger, extractTextFromContent } from "../utils";
 import { imService } from "../services/im";
 import { parseCommand } from "./commands";
 import { executePipeline } from "./pipeline";
-import type { LarkWebhookBody, ParsedMessage, LarkEvent } from "../types";
+import type { LarkWebhookBody, ParsedMessage, LarkEvent, BotCommand } from "../types";
 
 /**
  * Handle a Lark message receive event.
@@ -26,6 +26,13 @@ export async function handleMessageEvent(body: LarkWebhookBody): Promise<void> {
     logger.debug("Skipping bot's own message");
     return;
   }
+
+  // DEBUG: Log raw event data to understand mention structure
+  logger.debug({ 
+    mentions: event.message?.mentions,
+    senderOpenId: event.sender?.sender_id?.open_id,
+    messageContent: message.content
+  }, "Raw webhook event data");
 
   // Parse the message
   const parsed: ParsedMessage = {
@@ -63,6 +70,27 @@ export async function handleMessageEvent(body: LarkWebhookBody): Promise<void> {
     logger.info({ commandType: command.type }, "Parsed command");
 
     if (command.type === "unknown") {
+      // For group messages, check if text starts with @_user pattern
+      // This is a fallback for when mentions array is not populated
+      if (parsed.chatType === "group" && parsed.text.match(/^@_user_\d+/)) {
+        logger.info("Group message starts with @mention pattern, treating as bot mention");
+        // Re-parse as AI command, removing the mention prefix
+        const cleanText = parsed.text.replace(/^@_user_\d+\s*/, "").trim();
+        if (cleanText) {
+          const aiCommand: BotCommand = { type: "ai", prompt: cleanText };
+          logger.info({ cleanText }, "Executing as AI command with cleaned text");
+          const reply = await executePipeline(parsed, aiCommand);
+          if (reply) {
+            logger.info({ replyLength: reply.length }, "Sending reply");
+            await imService.sendText(parsed.chatId, reply, {
+              replyToMessageId: message.root_id || message.message_id,
+            });
+            logger.info("Reply sent successfully");
+          }
+          return;
+        }
+      }
+      
       // Bot was not mentioned — ignore
       logger.debug("Unknown command, not mentioned — ignoring");
       return;
@@ -123,38 +151,55 @@ function isBotMessage(event: LarkEvent): boolean {
 function isBotMentioned(event: LarkEvent): boolean {
   const mentions = event.message?.mentions;
   
+  // Log what we're working with
+  logger.debug({ 
+    hasMentions: !!mentions,
+    mentionCount: mentions?.length || 0,
+    rawMentions: mentions
+  }, "Checking if bot is mentioned");
+  
   if (!mentions || mentions.length === 0) {
-    logger.debug("No mentions in message");
+    logger.debug("No mentions array in message");
     return false;
   }
 
   logger.debug({ 
-    mentionCount: mentions.length,
     mentions: mentions.map(m => ({ 
       name: m.name, 
       openId: m.id?.open_id,
-      key: m.key 
+      key: m.key,
+      tenantKey: m.tenant_key
     }))
-  }, "Checking mentions");
+  }, "Processing mentions");
 
   for (const mention of mentions) {
     const mentionOpenId = mention.id?.open_id;
     
+    logger.debug({ 
+      mentionOpenId, 
+      mentionKey: mention.key, 
+      mentionName: mention.name 
+    }, "Checking individual mention");
+    
     // Bot open IDs typically start with "on_" (app/bot prefix)
     if (mentionOpenId && mentionOpenId.startsWith("on_")) {
-      logger.info({ mentionOpenId }, "Bot is mentioned!");
+      logger.info({ mentionOpenId }, "✓ Bot is mentioned! (detected by openId)");
       return true;
     }
     
-    // Also check mention key which might be "@_bot_" or "@_all"
-    if (mention.key?.includes("@_bot_") || mention.key?.includes("_bot")) {
-      logger.info({ mentionKey: mention.key }, "Bot mention detected by key");
-      return true;
+    // Also check mention key which might be "@_bot_" or similar
+    // Some Lark deployments use "@_user_1" pattern where user_1 is the bot
+    if (mention.key) {
+      // Check if key contains bot-related patterns
+      if (mention.key.includes("@_bot_") || mention.key.includes("_bot")) {
+        logger.info({ mentionKey: mention.key }, "✓ Bot is mentioned! (detected by key pattern)");
+        return true;
+      }
     }
     
     // Check if mention name contains "bot" (case insensitive)
     if (mention.name?.toLowerCase().includes("bot")) {
-      logger.info({ mentionName: mention.name }, "Bot mention detected by name");
+      logger.info({ mentionName: mention.name }, "✓ Bot is mentioned! (detected by name)");
       return true;
     }
   }
