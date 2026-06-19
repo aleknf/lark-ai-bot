@@ -44,6 +44,8 @@ export async function handleMessageEvent(body: LarkWebhookBody): Promise<void> {
     {
       messageId: parsed.messageId,
       chatId: parsed.chatId,
+      chatType: parsed.chatType,
+      isMentioned: parsed.isMentioned,
       text: parsed.text.slice(0, 100),
     },
     "Received message"
@@ -58,6 +60,8 @@ export async function handleMessageEvent(body: LarkWebhookBody): Promise<void> {
     // Parse bot command
     const command = parseCommand(parsed);
 
+    logger.info({ commandType: command.type }, "Parsed command");
+
     if (command.type === "unknown") {
       // Bot was not mentioned — ignore
       logger.debug("Unknown command, not mentioned — ignoring");
@@ -65,13 +69,18 @@ export async function handleMessageEvent(body: LarkWebhookBody): Promise<void> {
     }
 
     // Execute the AI pipeline
+    logger.info({ commandType: command.type }, "Executing AI pipeline");
     const reply = await executePipeline(parsed, command);
 
     if (reply) {
+      logger.info({ replyLength: reply.length }, "Sending reply");
       // Reply in thread if applicable, otherwise to chat
       await imService.sendText(parsed.chatId, reply, {
         replyToMessageId: message.root_id || message.message_id,
       });
+      logger.info("Reply sent successfully");
+    } else {
+      logger.warn("Pipeline returned empty reply");
     }
   } catch (error) {
     logger.error({ err: error }, "Failed to handle message");
@@ -91,29 +100,65 @@ export async function handleMessageEvent(body: LarkWebhookBody): Promise<void> {
  * Check if the message sender is the bot itself.
  */
 function isBotMessage(event: LarkEvent): boolean {
-  const appId = process.env.LARK_APP_ID || "";
   const senderId = event.sender?.sender_id?.open_id || "";
-  // Bot messages typically have a sender_id matching the app's bot open_id pattern
-  return senderId.includes("ou_") === false || senderId === "";
+  
+  // Bot sender IDs typically start with "on_" (not "ou_" which is for users)
+  if (senderId.startsWith("on_")) {
+    logger.debug({ senderId }, "Detected bot's own message");
+    return true;
+  }
+  
+  // Empty sender ID is also suspicious
+  if (!senderId) {
+    logger.debug("Message has no sender ID, treating as bot message");
+    return true;
+  }
+  
+  return false;
 }
 
 /**
  * Check if the bot is mentioned in the message.
  */
 function isBotMentioned(event: LarkEvent): boolean {
-  if (!event.message?.mentions?.length) return false;
+  const mentions = event.message?.mentions;
+  
+  if (!mentions || mentions.length === 0) {
+    logger.debug("No mentions in message");
+    return false;
+  }
 
-  const appId = process.env.LARK_APP_ID || "";
-  for (const mention of event.message.mentions) {
-    // Mentions have an id that may match the bot's open_id pattern
-    if (mention.id?.open_id && mention.id.open_id.includes("ou_") === false) {
+  logger.debug({ 
+    mentionCount: mentions.length,
+    mentions: mentions.map(m => ({ 
+      name: m.name, 
+      openId: m.id?.open_id,
+      key: m.key 
+    }))
+  }, "Checking mentions");
+
+  for (const mention of mentions) {
+    const mentionOpenId = mention.id?.open_id;
+    
+    // Bot open IDs typically start with "on_" (app/bot prefix)
+    if (mentionOpenId && mentionOpenId.startsWith("on_")) {
+      logger.info({ mentionOpenId }, "Bot is mentioned!");
       return true;
     }
-    // Check by tenant_key match
-    if (mention.tenant_key === event.sender?.tenant_key) {
-      // Name-based check as fallback
-      if (mention.name?.toLowerCase().includes("bot")) return true;
+    
+    // Also check mention key which might be "@_bot_" or "@_all"
+    if (mention.key?.includes("@_bot_") || mention.key?.includes("_bot")) {
+      logger.info({ mentionKey: mention.key }, "Bot mention detected by key");
+      return true;
+    }
+    
+    // Check if mention name contains "bot" (case insensitive)
+    if (mention.name?.toLowerCase().includes("bot")) {
+      logger.info({ mentionName: mention.name }, "Bot mention detected by name");
+      return true;
     }
   }
+  
+  logger.debug("Bot not mentioned in this message");
   return false;
 }

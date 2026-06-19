@@ -211,15 +211,25 @@ export async function sendMessage(
   if (options?.replyToMessageId) {
     args.push("+messages-reply");
     args.push("--message-id", options.replyToMessageId);
+    logger.info({ messageId: options.replyToMessageId, textLength: text.length }, "Replying to message via lark-cli");
   } else {
     args.push("+messages-send");
     args.push("--chat-id", chatId);
+    logger.info({ chatId, textLength: text.length }, "Sending message via lark-cli");
   }
 
   args.push("--as", identity, "--text", text);
 
+  logger.debug({ args: args.join(" ") }, "Full lark-cli command");
+
   // Use JSON output to detect errors
-  await execLarkCLIJSON(args);
+  try {
+    const result = await execLarkCLIJSON(args);
+    logger.info({ result }, "Message sent successfully");
+  } catch (error) {
+    logger.error({ err: error, args }, "Failed to send message via lark-cli");
+    throw error;
+  }
 }
 
 /**
