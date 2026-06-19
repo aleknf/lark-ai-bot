@@ -54,7 +54,75 @@ async function executePipeline(message, command) {
     const config = (0, config_1.getConfig)();
     try {
         // 1. Gather chat history context
-        const chatHistory = await gatherChatHistory(message.chatId);
+        let chatHistory = [];
+        try {
+            chatHistory = await gatherChatHistory(message.chatId);
+        }
+        catch (error) {
+            // Handle permission errors for chat history
+            if (error instanceof lark_cli_1.PermissionDeniedError) {
+                const { permission } = error;
+                utils_1.logger.warn({ permission }, "Permission denied when gathering chat history");
+                // For bot identity, need admin console configuration
+                if (permission.identity === "bot") {
+                    return [
+                        "🔐 **Bot Configuration Required**",
+                        "",
+                        `I need additional permissions to access chat history.`,
+                        "",
+                        "**Required scope:** `im:chat:readonly`",
+                        "",
+                        "Please ask your Lark workspace admin to:",
+                        "1. Go to [Lark Developer Console](https://open.feishu.cn/)",
+                        "2. Select this bot app",
+                        "3. Navigate to **Permissions & Scopes**",
+                        "4. Enable the `im:chat:readonly` scope",
+                        "5. Re-publish the app",
+                        "",
+                        "I can still answer your question, but without conversation context.",
+                    ].join("\n");
+                }
+                // For user identity, offer OAuth flow
+                if (permission.identity === "user" && permission.missingScopes.length > 0) {
+                    try {
+                        const auth = await (0, lark_cli_1.initiateAuth)(permission.missingScopes);
+                        return [
+                            "🔐 **Authorization Required**",
+                            "",
+                            `To provide better answers with conversation context, I need your permission to read chat history.`,
+                            "",
+                            "**Required scopes:** `" + permission.missingScopes.join(", ") + "`",
+                            "",
+                            `🔗 **Click here to authorize:** ${auth.verificationUrl}`,
+                            "",
+                            `⏳ This link expires in ${Math.round(auth.expiresIn / 60)} minutes.`,
+                            "",
+                            "After authorizing, just mention me again and I'll have full context!",
+                            "",
+                            "_For now, I can still help but won't have access to previous messages._",
+                        ].join("\n");
+                    }
+                    catch (authError) {
+                        utils_1.logger.error({ err: authError }, "Failed to initiate auth flow");
+                        return [
+                            "🔐 **Authorization Required**",
+                            "",
+                            "I need permission to read chat history for better context.",
+                            "",
+                            "Please run this command:",
+                            "```",
+                            `lark-cli auth login --scope "${permission.missingScopes.join(",")}"`,
+                            "```",
+                            "",
+                            "I can still help, but without conversation context.",
+                        ].join("\n");
+                    }
+                }
+            }
+            // For other errors, continue without history
+            utils_1.logger.warn("Continuing without chat history due to error");
+            chatHistory = [];
+        }
         // 2. Build context based on command type
         const context = {
             message,
@@ -129,8 +197,12 @@ async function gatherChatHistory(chatId) {
     }
     catch (error) {
         utils_1.logger.warn({ err: error, chatId }, "Failed to gather chat history, continuing without history");
-        // Don't fail the entire pipeline if we can't get history
-        // The bot can still respond without context
+        // Check if this is a permission error
+        if (error instanceof lark_cli_1.PermissionDeniedError) {
+            // Don't throw yet, let the pipeline handle it
+            throw error;
+        }
+        // For other errors, continue without history
         return [];
     }
 }

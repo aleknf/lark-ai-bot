@@ -28,21 +28,16 @@ exports.imService = {
         ]);
     },
     async getChatHistory(chatId, limit = 20) {
-        try {
-            const raw = await (0, lark_cli_1.fetchChatHistory)(chatId, limit);
-            return raw.map((m) => ({
-                messageId: m.messageId,
-                senderId: m.senderId,
-                text: m.text,
-                timestamp: m.timestamp,
-                isBot: m.senderId.includes(BOT_APP_ID) || m.senderId.startsWith("cli_"),
-            }));
-        }
-        catch (error) {
-            // If authorization fails, return empty history instead of crashing
-            utils_1.logger.warn({ err: error, chatId }, "Could not fetch chat history (authorization issue?)");
-            return [];
-        }
+        // Don't catch the error here - let it propagate to pipeline
+        // so we can offer OAuth flow to the user
+        const raw = await (0, lark_cli_1.fetchChatHistory)(chatId, limit);
+        return raw.map((m) => ({
+            messageId: m.messageId,
+            senderId: m.senderId,
+            text: m.text,
+            timestamp: m.timestamp,
+            isBot: m.senderId.includes(BOT_APP_ID) || m.senderId.startsWith("cli_"),
+        }));
     },
     async sendCard(chatId, cardJson) {
         const card = {

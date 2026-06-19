@@ -85,24 +85,40 @@ async function execLarkCLIJSON(args, options) {
         if (errJson.error?.type === "confirmation_required") {
             throw new Error(`High-risk operation requires confirmation: ${errJson.error.message}. Add --yes to confirm.`);
         }
-        // Check for permission_denied / access_denied
-        if (errJson.error?.type === "permission_denied" ||
-            errJson.error?.type === "access_denied") {
+        // Check for authorization / permission_denied / access_denied
+        if (errJson.error?.type === "authorization" ||
+            errJson.error?.type === "permission_denied" ||
+            errJson.error?.type === "access_denied" ||
+            errJson.error?.subtype === "user_unauthorized") {
             const identity = args.includes("--as") && args[args.indexOf("--as") + 1] === "bot"
                 ? "bot"
                 : "user";
             const service = args[0] || "unknown";
+            // Try to extract missing scopes from error message or hint
+            let missingScopes = errJson.error.permission_violations || [];
+            // If no specific scopes, infer from the operation
+            if (missingScopes.length === 0) {
+                if (service === "im" && args.includes("+chat-messages-list")) {
+                    missingScopes = ["im:chat:readonly", "im:message"];
+                }
+                else if (service === "calendar") {
+                    missingScopes = ["calendar:calendar"];
+                }
+                else if (service === "task") {
+                    missingScopes = ["task:task"];
+                }
+            }
             throw new PermissionDeniedError({
                 type: "permission_denied",
                 service,
                 identity: identity,
-                missingScopes: errJson.error.permission_violations || [],
-                consoleUrl: undefined, // populated by caller if needed
+                missingScopes,
+                consoleUrl: undefined,
             });
         }
         // Generic permission check: look for "no permission" or "access denied" in message
         const rawErr = (result.stderr || result.stdout).toLowerCase();
-        if (rawErr.includes("no permission") || rawErr.includes("access_denied")) {
+        if (rawErr.includes("no permission") || rawErr.includes("access_denied") || rawErr.includes("access denied")) {
             const service = args[0] || "unknown";
             const identity = args.includes("--as") && args[args.indexOf("--as") + 1] === "bot"
                 ? "bot"
